@@ -1,26 +1,20 @@
-import os, re, json, base64, threading, time, requests, shutil
+import os, re, json, base64, threading, time, requests
 from datetime import datetime, timedelta
 from flask import Flask, jsonify
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 
 app = Flask(__name__)
-
-# ---------- КОПИРУЕМ СЕССИЮ ИЗ SECRET FILE ----------
-SECRET_SESSION = "/etc/secrets/session.session"
-LOCAL_SESSION = "session.session"
-
-if os.path.exists(SECRET_SESSION):
-    shutil.copy(SECRET_SESSION, LOCAL_SESSION)
-    print("✅ Сессия скопирована из Secret File")
-else:
-    print("❌ Secret File не найден! Проверьте имя файла в настройках Render.")
 
 # ---------- НАСТРОЙКИ ----------
 API_ID = int(os.environ["API_ID"])
 API_HASH = os.environ["API_HASH"]
+SESSION_STRING = os.environ["SESSION_STRING"]
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
 CHANNEL_USERNAME = "radarrussiia"
+
+print("✅ Конфигурация загружена")
 
 STATUS_PRIORITY = {"missile_alert": 0, "missile_danger": 1, "drone_attack": 2, "drone_danger": 3, "clear": 4}
 
@@ -73,7 +67,8 @@ def detect_status(text):
         return "drone_danger" if "опасность сохраняется" in t else "clear"
     return None
 
-client = TelegramClient(LOCAL_SESSION, API_ID, API_HASH)
+# ---------- КЛИЕНТ (StringSession) ----------
+client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 @client.on(events.NewMessage(chats=CHANNEL_USERNAME))
 async def handler(event):
