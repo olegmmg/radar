@@ -1,5 +1,5 @@
 import os, re, json, base64, threading, time, requests, asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -149,7 +149,7 @@ async def poll_messages():
                     print(f"  ↳ Статус не определён (регионы: {regions})")
                     continue
                 
-                now = datetime.utcnow().isoformat() + "Z"
+                now = datetime.now(timezone.utc).isoformat()
                 for r in regions:
                     cur = region_statuses.get(r, {}).get("status")
                     if cur and STATUS_PRIORITY.get(status, 99) >= STATUS_PRIORITY.get(cur, 99):
@@ -165,10 +165,16 @@ async def poll_messages():
 # ---------- FLASK ----------
 @app.route("/api/statuses")
 def get_statuses():
-    hour_ago = datetime.utcnow() - timedelta(hours=1)
-    result = {"regions": {}, "last_updated": datetime.utcnow().isoformat() + "Z"}
+    now = datetime.now(timezone.utc)
+    hour_ago = now - timedelta(hours=1)
+    result = {"regions": {}, "last_updated": now.isoformat()}
     for r, d in region_statuses.items():
-        count = sum(1 for a in alert_history if a["region"] == r and datetime.fromisoformat(a["timestamp"]) > hour_ago)
+        count = 0
+        for a in alert_history:
+            if a["region"] == r:
+                at = datetime.fromisoformat(a["timestamp"])
+                if at > hour_ago:
+                    count += 1
         result["regions"][r] = {**d, "alerts_last_hour": count}
     return jsonify(result)
 
@@ -181,7 +187,7 @@ def push_to_github():
         return
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/data/statuses.json"
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    export = {"regions": region_statuses, "last_updated": datetime.utcnow().isoformat() + "Z"}
+    export = {"regions": region_statuses, "last_updated": datetime.now(timezone.utc).isoformat()}
     content = json.dumps(export, ensure_ascii=False, indent=2)
     b64 = base64.b64encode(content.encode()).decode()
     try:
