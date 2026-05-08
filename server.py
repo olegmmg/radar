@@ -6,6 +6,13 @@ from telethon.sessions import StringSession
 
 app = Flask(__name__)
 
+@app.after_request
+def add_cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET"
+    return response
+
 # ---------- НАСТРОЙКИ ----------
 API_ID = int(os.environ["API_ID"])
 API_HASH = os.environ["API_HASH"]
@@ -97,10 +104,8 @@ def detect_status(text):
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 async def poll_messages():
-    """Polling через asyncio"""
     global last_msg_id
     
-    # Проверяем соединение с каналом
     try:
         channel = await client.get_entity(CHANNEL_USERNAME)
         print(f"✅ Канал: {channel.title} (ID: {channel.id})")
@@ -113,10 +118,7 @@ async def poll_messages():
             messages = await client.get_messages(CHANNEL_USERNAME, limit=15)
             
             if not messages:
-                print("⏳ Сообщений нет")
                 continue
-            
-            print(f"📬 Проверка: {len(messages)} сообщений")
             
             for msg in reversed(messages):
                 if msg.id <= last_msg_id:
@@ -223,16 +225,13 @@ async def main():
         last_msg_id = messages[0].id
         print(f"📌 Последнее сообщение ID: {last_msg_id}")
     
-    # Запускаем polling
     asyncio.create_task(poll_messages())
     print("🔄 Polling запущен (каждые 30 секунд)")
     
-    # Flask в отдельном потоке
     threading.Thread(target=run_flask, daemon=True).start()
     threading.Thread(target=keep_alive, daemon=True).start()
     threading.Thread(target=periodic_push, daemon=True).start()
     
-    # Держим event loop
     while True:
         await asyncio.sleep(1)
 
