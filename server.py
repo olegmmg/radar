@@ -17,7 +17,7 @@ else:
 
 # ---------- НАСТРОЙКИ ----------
 API_ID = int(os.environ["API_ID"])
-API_HASH = os.environ["API_HASH"])
+API_HASH = os.environ["API_HASH"]
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
 CHANNEL_USERNAME = "radarrussiia"
