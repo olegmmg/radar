@@ -19,7 +19,7 @@ API_HASH = os.environ["API_HASH"]
 SESSION_STRING = os.environ["SESSION_STRING"]
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
-CHANNEL_USERNAME = "radarrussiia"
+CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "radarrussiia")
 
 print("✅ Конфигурация загружена")
 
