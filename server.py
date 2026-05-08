@@ -1,4 +1,4 @@
-import os, re, json, base64, threading, time, requests
+import os, re, json, base64, threading, time, requests, asyncio
 from datetime import datetime, timedelta
 from flask import Flask, jsonify
 from telethon import TelegramClient
@@ -57,8 +57,6 @@ REGION_ALIASES = {
 
 region_statuses = {}
 alert_history = []
-
-# ID последнего обработанного сообщения
 last_msg_id = 0
 
 def is_ad_message(text):
@@ -98,26 +96,33 @@ def detect_status(text):
 # ---------- КЛИЕНТ ----------
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-def poll_messages():
-    """Каждые 30 секунд проверяет новые сообщения"""
+async def poll_messages():
+    """Polling через asyncio"""
     global last_msg_id
     
+    # Проверяем соединение с каналом
+    try:
+        channel = await client.get_entity(CHANNEL_USERNAME)
+        print(f"✅ Канал: {channel.title} (ID: {channel.id})")
+    except Exception as e:
+        print(f"❌ Ошибка канала: {e}")
+    
     while True:
-        time.sleep(30)
+        await asyncio.sleep(30)
         try:
-            # Получаем последние 5 сообщений
-            messages = client.loop.run_until_complete(
-                client.get_messages(CHANNEL_USERNAME, limit=15)
-            )
+            messages = await client.get_messages(CHANNEL_USERNAME, limit=15)
             
             if not messages:
+                print("⏳ Сообщений нет")
                 continue
+            
+            print(f"📬 Проверка: {len(messages)} сообщений")
             
             for msg in reversed(messages):
                 if msg.id <= last_msg_id:
                     continue
                 
-                last_msg_id = max(last_msg_id, msg.id)
+                last_msg_id = msg.id
                 text = msg.message
                 if not text:
                     continue
@@ -205,24 +210,31 @@ def keep_alive():
         except:
             pass
 
-if __name__ == "__main__":
-    # Запускаем клиент
-    async def start():
-        await client.start()
-        print("✅ Клиент запущен")
-        # Получаем ID последнего сообщения, чтобы не обрабатывать старые
-        global last_msg_id
-        messages = await client.get_messages(CHANNEL_USERNAME, limit=1)
-        if messages:
-            last_msg_id = messages[0].id
-            print(f"📌 Последнее сообщение ID: {last_msg_id}")
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+async def main():
+    await client.start()
+    print("✅ Клиент запущен")
     
-    client.loop.run_until_complete(start())
+    global last_msg_id
+    messages = await client.get_messages(CHANNEL_USERNAME, limit=1)
+    if messages:
+        last_msg_id = messages[0].id
+        print(f"📌 Последнее сообщение ID: {last_msg_id}")
     
-    # Запускаем polling в отдельном потоке
-    threading.Thread(target=poll_messages, daemon=True).start()
+    # Запускаем polling
+    asyncio.create_task(poll_messages())
+    print("🔄 Polling запущен (каждые 30 секунд)")
+    
+    # Flask в отдельном потоке
+    threading.Thread(target=run_flask, daemon=True).start()
     threading.Thread(target=keep_alive, daemon=True).start()
     threading.Thread(target=periodic_push, daemon=True).start()
     
-    print("🔄 Polling запущен (каждые 30 секунд)")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    # Держим event loop
+    while True:
+        await asyncio.sleep(1)
+
+if __name__ == "__main__":
+    asyncio.run(main())
