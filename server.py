@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+from telethon.errors import FloodWaitError
 
 app = Flask(__name__)
 
@@ -21,28 +22,105 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
 CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "radarrussiia")
 DPR_CHANNEL = os.environ.get("DPR_CHANNEL", "DPR_channel")
+REPORT_CHANNEL = os.environ.get("REPORT_CHANNEL", "RadarMapRf")  # Канал для отправки сводок
 
 print("✅ Конфигурация загружена")
 print(f"📡 Основной канал: {CHANNEL_USERNAME}")
 print(f"📡 Канал ДНР/ЛНР: {DPR_CHANNEL}")
+print(f"📢 Канал для сводок: @{REPORT_CHANNEL}")
 
 # Приоритеты (меньше число = выше приоритет)
-# Опасность имеет более высокий приоритет, чем отбой
 STATUS_PRIORITY = {
-    "missile_alert": 0,      # РАКЕТНАЯ ТРЕВОГА - наивысший
-    "missile_danger": 1,     # РАКЕТНАЯ ОПАСНОСТЬ
-    "drone_attack": 2,       # АТАКА БПЛА
-    "drone_danger": 3,       # ОПАСНОСТЬ БПЛА
-    "clear": 4,              # ОТБОЙ - наинизший (но clear имеет особое правило: всегда сбрасывает)
+    "missile_alert": 0,
+    "missile_danger": 1,
+    "drone_attack": 2,
+    "drone_danger": 3,
+    "clear": 4,
 }
 
-# Регионы, разрешённые для канала ДНР/ЛНР
-ALLOWED_DPR_REGIONS = [
-    "Донецкая Народная Республика",
-    "Луганская Народная Республика",
-    "Запорожская область",
-    "Херсонская область"
-]
+# Классификация для сводки
+HIGH_PRIORITY_STATUSES = ["missile_alert", "missile_danger", "drone_attack"]  # 🔴 АКТИВНАЯ
+MEDIUM_PRIORITY_STATUSES = ["drone_danger"]  # 🟡 ПОТЕНЦИАЛЬНАЯ
+
+# Сокращённые названия регионов для красивого вывода
+REGION_SHORT_NAMES = {
+    "Московская область": "Московская обл.",
+    "Ленинградская область": "Ленинградская обл.",
+    "Нижегородская область": "Нижегородская обл.",
+    "Ставропольский край": "Ставропольский край",
+    "Краснодарский край": "Краснодарский край",
+    "Чеченская Республика": "Чеченская Респ.",
+    "Республика Дагестан": "Респ. Дагестан",
+    "Республика Ингушетия": "Респ. Ингушетия",
+    "Республика Северная Осетия": "Респ. Сев. Осетия",
+    "Карачаево-Черкесская Республика": "Карачаево-Черкесия",
+    "Кабардино-Балкарская Республика": "Кабардино-Балкария",
+    "Республика Адыгея": "Респ. Адыгея",
+    "Республика Крым": "Респ. Крым",
+    "Запорожская область": "Запорожская обл.",
+    "Херсонская область": "Херсонская обл.",
+    "Донецкая Народная Республика": "ДНР",
+    "Луганская Народная Республика": "ЛНР",
+    "Астраханская область": "Астраханская обл.",
+    "Волгоградская область": "Волгоградская обл.",
+    "Белгородская область": "Белгородская обл.",
+    "Брянская область": "Брянская обл.",
+    "Воронежская область": "Воронежская обл.",
+    "Курская область": "Курская обл.",
+    "Ростовская область": "Ростовская обл.",
+    "Смоленская область": "Смоленская обл.",
+    "Тульская область": "Тульская обл.",
+    "Калужская область": "Калужская обл.",
+    "Рязанская область": "Рязанская обл.",
+    "Тверская область": "Тверская обл.",
+    "Ярославская область": "Ярославская обл.",
+    "Владимирская область": "Владимирская обл.",
+    "Ивановская область": "Ивановская обл.",
+    "Костромская область": "Костромская обл.",
+    "Тамбовская область": "Тамбовская обл.",
+    "Липецкая область": "Липецкая обл.",
+    "Орловская область": "Орловская обл.",
+    "Пензенская область": "Пензенская обл.",
+    "Саратовская область": "Саратовская обл.",
+    "Ульяновская область": "Ульяновская обл.",
+    "Самарская область": "Самарская обл.",
+    "Пермский край": "Пермский край",
+    "Республика Башкортостан": "Респ. Башкортостан",
+    "Республика Татарстан": "Респ. Татарстан",
+    "Республика Удмуртия": "Респ. Удмуртия",
+    "Республика Марий Эл": "Респ. Марий Эл",
+    "Республика Мордовия": "Респ. Мордовия",
+    "Чувашская Республика": "Чувашская Респ.",
+    "Кировская область": "Кировская обл.",
+    "Оренбургская область": "Оренбургская обл.",
+    "Челябинская область": "Челябинская обл.",
+    "Свердловская область": "Свердловская обл.",
+    "Курганская область": "Курганская обл.",
+    "Тюменская область": "Тюменская обл.",
+    "Омская область": "Омская обл.",
+    "Новосибирская область": "Новосибирская обл.",
+    "Томская область": "Томская обл.",
+    "Кемеровская область": "Кемеровская обл.",
+    "Алтайский край": "Алтайский край",
+    "Красноярский край": "Красноярский край",
+    "Иркутская область": "Иркутская обл.",
+    "Забайкальский край": "Забайкальский край",
+    "Республика Бурятия": "Респ. Бурятия",
+    "Приморский край": "Приморский край",
+    "Хабаровский край": "Хабаровский край",
+    "Амурская область": "Амурская обл.",
+    "Сахалинская область": "Сахалинская обл.",
+    "Камчатский край": "Камчатский край",
+    "Магаданская область": "Магаданская обл.",
+    "Республика Саха (Якутия)": "Респ. Саха (Якутия)",
+    "Еврейская АО": "Еврейская АО",
+    "Чукотский АО": "Чукотский АО",
+    "ЯНАО": "ЯНАО",
+    "Ханты-Мансийский АО": "ХМАО",
+}
+
+# Для отслеживания изменений
+last_summary = {"high": [], "medium": [], "timestamp": None}
 
 REGION_ALIASES = {
     "Московская область": "Московская область",
@@ -181,16 +259,103 @@ REGION_ALIASES = {
     "Магаданская область": "Магаданская обл.",
     "Камчатский край": "Камчатский край",
     "Чукотский АО": "Чукотский АО",
-    "Донецкая Народная Республика": "Донецкая область",
-    "Луганская Народная Республика": "Луганская область",
+    "Донецкая Народная Республика": "Донецкая Народная Республика",
+    "Луганская Народная Республика": "Луганская Народная Республика",
     "Запорожская область": "Запорожская область",
     "Херсонская область": "Херсонская область",
 }
+
+# Регионы, разрешённые для канала ДНР/ЛНР
+ALLOWED_DPR_REGIONS = [
+    "Донецкая Народная Республика",
+    "Луганская Народная Республика",
+    "Запорожская область",
+    "Херсонская область"
+]
 
 region_statuses = {}
 alert_history = []
 last_msg_id_main = 0
 last_msg_id_dpr = 0
+
+def get_short_name(region):
+    """Возвращает сокращённое название региона для сводки"""
+    return REGION_SHORT_NAMES.get(region, region)
+
+def format_summary(regions):
+    """Форматирует сводку по тревогам"""
+    high_alerts = []
+    medium_alerts = []
+    
+    for region, data in regions.items():
+        status = data.get("status")
+        if not status:
+            continue
+        
+        short_name = get_short_name(region)
+        
+        if status in HIGH_PRIORITY_STATUSES:
+            high_alerts.append(f"    • {short_name}")
+        elif status in MEDIUM_PRIORITY_STATUSES:
+            medium_alerts.append(f"    • {short_name}")
+    
+    high_alerts.sort()
+    medium_alerts.sort()
+    
+    # Проверяем изменения
+    global last_summary
+    if (last_summary["high"] == high_alerts and 
+        last_summary["medium"] == medium_alerts):
+        return None
+    
+    last_summary["high"] = high_alerts
+    last_summary["medium"] = medium_alerts
+    last_summary["timestamp"] = datetime.now(timezone.utc)
+    
+    # Формируем сообщение
+    now = datetime.now(timezone.utc) + timedelta(hours=3)
+    time_str = now.strftime("%H:%M | %d/%m")
+    
+    message = f"🛸 *Воздушная тревога* 🚀\n"
+    message += f"`{time_str}`\n\n"
+    
+    if high_alerts:
+        message += f"🔴 *АКТИВНАЯ ТРЕВОГА* 🔴\n"
+        message += "\n".join(high_alerts)
+        message += "\n\n"
+    else:
+        message += f"🔴 *АКТИВНАЯ ТРЕВОГА* 🔴\n    • НЕТ\n\n"
+    
+    if medium_alerts:
+        message += f"🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ* 🟡\n"
+        message += "\n".join(medium_alerts)
+        message += "\n\n"
+    else:
+        message += f"🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ* 🟡\n    • НЕТ\n\n"
+    
+    message += f"---\n"
+    message += f"📍 [Карта тревог](https://olegmmg.github.io/Radar/)"
+    
+    return message
+
+async def send_report(client):
+    """Отправляет сводку в канал при изменении статусов"""
+    if not region_statuses:
+        return
+    
+    summary = format_summary(region_statuses)
+    if summary is None:
+        return
+    
+    try:
+        entity = await client.get_entity(REPORT_CHANNEL)
+        await client.send_message(entity, summary, link_preview=False)
+        print(f"📢 Отправлена сводка в @{REPORT_CHANNEL}")
+    except FloodWaitError as e:
+        print(f"⏳ Flood wait {e.seconds} секунд")
+        await asyncio.sleep(e.seconds)
+    except Exception as e:
+        print(f"❌ Ошибка отправки сводки: {e}")
 
 def clean_message_for_frontend(msg):
     if not msg:
@@ -260,7 +425,7 @@ def extract_regions(text):
 def detect_status(text):
     t = text.lower()
     
-    # Отбой - проверяется первым
+    # Отбой
     if any(w in t for w in [
         "отбой", "отбой опасности", "отбой по бпла", "отбой ракетной опасности",
         "отбой авиационной", "отбой фиксации", "отбой по пкр", "отбой по бэк"
@@ -301,6 +466,8 @@ def detect_status(text):
     return None
 
 def process_message(text, msg_id=None, source="main"):
+    global region_statuses, alert_history
+    
     if not text:
         return
     
@@ -336,17 +503,17 @@ def process_message(text, msg_id=None, source="main"):
     now = datetime.now(timezone.utc).isoformat()
     clean_msg = clean_message_for_frontend(text)
     
+    updated = False
+    
     for r in regions:
         cur = region_statuses.get(r, {}).get("status")
         
-        # clear ВСЕГДА перезаписывает (сбрасывает любой статус)
+        # clear ВСЕГДА перезаписывает
         if status == "clear":
-            # clear применяется всегда
             pass
-        # Для остальных статусов: проверяем приоритет
         elif cur is not None and STATUS_PRIORITY.get(status, 99) > STATUS_PRIORITY.get(cur, 99):
             if msg_id:
-                print(f"  ↳ {r}: {status} (приор.{STATUS_PRIORITY.get(status,99)}) не приоритетнее {cur} (приор.{STATUS_PRIORITY.get(cur,99)})")
+                print(f"  ↳ {r}: {status} не приоритетнее {cur}")
             continue
         
         region_statuses[r] = {
@@ -364,11 +531,15 @@ def process_message(text, msg_id=None, source="main"):
             "source": source
         })
         
+        updated = True
+        
         if len(alert_history) > 1000:
             alert_history.pop(0)
         
         if msg_id:
             print(f"  ✅ {r} → {status} (источник: {source})")
+    
+    return updated
 
 # ---------- FLASK ----------
 @app.route("/api/statuses")
@@ -500,6 +671,7 @@ async def poll_messages():
         try:
             messages = await client.get_messages(CHANNEL_USERNAME, limit=30)
             if messages:
+                updated = False
                 for msg in reversed(messages):
                     if msg.id <= last_msg_id_main:
                         continue
@@ -507,7 +679,10 @@ async def poll_messages():
                     if msg.message:
                         preview = msg.message[:80].replace('\n', ' ')
                         print(f"📩 [main] ID:{msg.id} | {preview}...")
-                        process_message(msg.message, msg.id, source="main")
+                        if process_message(msg.message, msg.id, source="main"):
+                            updated = True
+                if updated:
+                    await send_report(client)
         except Exception as e:
             print(f"❌ Ошибка основного канала: {e}")
         
@@ -515,6 +690,7 @@ async def poll_messages():
         try:
             dpr_messages = await client.get_messages(DPR_CHANNEL, limit=30)
             if dpr_messages:
+                updated = False
                 for msg in reversed(dpr_messages):
                     if msg.id <= last_msg_id_dpr:
                         continue
@@ -522,7 +698,10 @@ async def poll_messages():
                     if msg.message:
                         preview = msg.message[:80].replace('\n', ' ')
                         print(f"📩 [DPR] ID:{msg.id} | {preview}...")
-                        process_message(msg.message, msg.id, source="dpr")
+                        if process_message(msg.message, msg.id, source="dpr"):
+                            updated = True
+                if updated:
+                    await send_report(client)
         except Exception as e:
             print(f"❌ Ошибка канала ДНР/ЛНР: {e}")
 
@@ -530,7 +709,7 @@ async def main():
     await client.start()
     print("✅ Telegram клиент запущен")
     
-    global last_msg_id_main, last_msg_id_dpr
+    global last_msg_id_main, last_msg_id_dpr, region_statuses
     
     print("📥 Загружаем историю...")
     
@@ -558,6 +737,9 @@ async def main():
     
     print(f"📊 Статусов регионов: {len(region_statuses)}")
     
+    # Отправляем начальную сводку
+    await send_report(client)
+    
     asyncio.create_task(poll_messages())
     print("🔄 Polling запущен (каждые 30 секунд)")
     
@@ -571,10 +753,9 @@ async def main():
     ╠═══════════════════════════════════════════════════╣
     ║   📡 Основной канал: {CHANNEL_USERNAME}
     ║   📡 Канал ДНР/ЛНР: {DPR_CHANNEL}
+    ║   📢 Канал для сводок: @{REPORT_CHANNEL}
     ║   📊 Статусов активно: {len(region_statuses)}
     ║   🔄 Обновление: 30 сек
-    ║   🎯 clear ВСЕГДА сбрасывает любой статус!
-    ║   🎯 Ракетная тревога имеет наивысший приоритет
     ╚═══════════════════════════════════════════════════╝
     """)
     
