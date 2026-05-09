@@ -23,12 +23,13 @@ CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "radarrussiia")
 
 print("✅ Конфигурация загружена")
 
+# Меньшее число = выше приоритет (clear самый важный)
 STATUS_PRIORITY = {
-    "missile_alert": 0,
-    "missile_danger": 1,
+    "clear": 0,
+    "drone_danger": 1,
     "drone_attack": 2,
-    "drone_danger": 3,
-    "clear": 4
+    "missile_danger": 3,
+    "missile_alert": 4
 }
 
 REGION_ALIASES = {
@@ -107,8 +108,6 @@ REGION_ALIASES = {
     "Пермь": "Пермский край",
     "Республика Крым": "Республика Крым",
     "Симферополь": "Республика Крым",
-    "Республика Адыгея": "Республика Адыгея",
-    "Майкоп": "Республика Адыгея",
     "Республика Адыгея": "Республика Адыгея",
     "Чеченская Республика": "Чеченская Республика",
     "Грозный": "Чеченская Республика",
@@ -241,7 +240,8 @@ def process_message(text, msg_id=None):
     now = datetime.now(timezone.utc).isoformat()
     for r in regions:
         cur = region_statuses.get(r, {}).get("status")
-        if cur and STATUS_PRIORITY.get(status, 99) >= STATUS_PRIORITY.get(cur, 99):
+        # Меньшее число = выше приоритет, поэтому новый статус применяется если он МЕНЬШЕ или равен
+        if cur is not None and STATUS_PRIORITY.get(status, 99) > STATUS_PRIORITY.get(cur, 99):
             if msg_id:
                 print(f"  ↳ {r}: {status} не приоритетнее {cur}")
             continue
