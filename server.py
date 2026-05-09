@@ -27,13 +27,22 @@ print(f"📡 Основной канал: {CHANNEL_USERNAME}")
 print(f"📡 Канал ДНР/ЛНР: {DPR_CHANNEL}")
 
 # Приоритеты (меньше число = выше приоритет)
+# Опасность имеет более высокий приоритет, чем отбой
 STATUS_PRIORITY = {
-    "clear": 0,
-    "missile_alert": 1,
-    "missile_danger": 2,
-    "drone_attack": 3,
-    "drone_danger": 4,
+    "missile_alert": 0,      # РАКЕТНАЯ ТРЕВОГА - наивысший
+    "missile_danger": 1,     # РАКЕТНАЯ ОПАСНОСТЬ
+    "drone_attack": 2,       # АТАКА БПЛА
+    "drone_danger": 3,       # ОПАСНОСТЬ БПЛА
+    "clear": 4,              # ОТБОЙ - наинизший (но clear имеет особое правило: всегда сбрасывает)
 }
+
+# Регионы, разрешённые для канала ДНР/ЛНР
+ALLOWED_DPR_REGIONS = [
+    "Донецкая Народная Республика",
+    "Луганская Народная Республика",
+    "Запорожская область",
+    "Херсонская область"
+]
 
 REGION_ALIASES = {
     "Московская область": "Московская область",
@@ -172,22 +181,11 @@ REGION_ALIASES = {
     "Магаданская область": "Магаданская обл.",
     "Камчатский край": "Камчатский край",
     "Чукотский АО": "Чукотский АО",
-    # ДНР, ЛНР, Запорожье, Херсон
     "Донецкая Народная Республика": "Донецкая область",
     "Луганская Народная Республика": "Луганская область",
-    "Запорожская область РФ": "Запорожская область",
     "Запорожская область": "Запорожская область",
-    "Херсонская область РФ": "Херсонская область",
     "Херсонская область": "Херсонская область",
 }
-
-# Регионы, которые могут обрабатываться из канала ДНР/ЛНР
-ALLOWED_DPR_REGIONS = [
-    "Донецкая Народная Республика",
-    "Луганская Народная Республика", 
-    "Запорожская область",
-    "Херсонская область"
-]
 
 region_statuses = {}
 alert_history = []
@@ -245,7 +243,6 @@ def extract_regions(text):
     
     text_lower = normalized.lower()
     
-    # ДНР/ЛНР по ключевым словам
     if re.search(r'\b(днр|dnr|донецк|горловка|макеевка|енакиево)\b', text_lower):
         found.add("Донецкая Народная Республика")
     if re.search(r'\b(лнр|lnr|луганск|алчевск|брянка)\b', text_lower):
@@ -253,8 +250,6 @@ def extract_regions(text):
     if re.search(r'\b(лднр|ldnr)\b', text_lower):
         found.add("Донецкая Народная Республика")
         found.add("Луганская Народная Республика")
-    
-    # Запорожская и Херсонская области
     if re.search(r'запорожск|zaporizh', text_lower):
         found.add("Запорожская область")
     if re.search(r'херсон|kherson', text_lower):
@@ -265,28 +260,42 @@ def extract_regions(text):
 def detect_status(text):
     t = text.lower()
     
-    # Отбой
-    if any(w in t for w in ["отбой", "отбой опасности", "отбой по бпла", "отбой ракетной опасности"]):
+    # Отбой - проверяется первым
+    if any(w in t for w in [
+        "отбой", "отбой опасности", "отбой по бпла", "отбой ракетной опасности",
+        "отбой авиационной", "отбой фиксации", "отбой по пкр", "отбой по бэк"
+    ]):
         return "clear"
     
-    # Ложная цель
     if "ложная цель" in t:
         return None
     
     # Ракетная тревога
-    if any(w in t for w in ["ракетная тревога", "тревога по пкр", "тревога по бэк", "ракетно бомбовая опасность", "авиационная ракетная"]):
+    if any(w in t for w in [
+        "ракетная тревога", "ракетной тревоги", "тревога по пкр", "тревога по бэк",
+        "ракетно бомбовая опасность", "авиационная ракетная"
+    ]):
         return "missile_alert"
     
     # Ракетная опасность
-    if any(w in t for w in ["ракетная опасность", "опасность по пкр", "опасность по бэк"]):
+    if any(w in t for w in [
+        "ракетная опасность", "ракетной опасности", "опасность по пкр", "опасность по бэк"
+    ]):
         return "missile_danger"
     
     # Атака БПЛА
-    if any(w in t for w in ["работа пво", "сбитие", "фиксация бпла", "группа бпла", "тревога по бпла", "атака бпла"]):
+    if any(w in t for w in [
+        "работа пво", "сбитие", "сбития", "фиксация бпла", "фиксации бпла",
+        "группа бпла", "группы бпла", "тревога по бпла", "атака бпла", "атакуют",
+        "много бпла", "волна бпла", "фиксация групп", "идут сбития"
+    ]):
         return "drone_attack"
     
     # Опасность БПЛА
-    if any(w in t for w in ["опасность по бпла", "угроза атаки", "внимание по бпла"]):
+    if any(w in t for w in [
+        "опасность по бпла", "угроза атаки", "внимание по бпла", "меры безопасности",
+        "опасность сохраняется", "повторно"
+    ]):
         return "drone_danger"
     
     return None
@@ -311,18 +320,17 @@ def process_message(text, msg_id=None, source="main"):
             print(f"  ↳ Регионы не найдены")
         return
     
-    # Для канала ДНР - только разрешённые регионы
     if source == "dpr":
         regions = [r for r in regions if r in ALLOWED_DPR_REGIONS]
         if not regions:
             if msg_id:
-                print(f"  ↳ Регион не из списка ДНР/ЛНР/Запорожье/Херсон (пропущено)")
+                print(f"  ↳ Регион не из списка (пропущено)")
             return
     
     status = detect_status(text)
     if not status:
         if msg_id:
-            print(f"  ↳ Статус не определён")
+            print(f"  ↳ Статус не определён: {text[:50]}")
         return
     
     now = datetime.now(timezone.utc).isoformat()
@@ -330,9 +338,15 @@ def process_message(text, msg_id=None, source="main"):
     
     for r in regions:
         cur = region_statuses.get(r, {}).get("status")
-        if cur is not None and STATUS_PRIORITY.get(status, 99) > STATUS_PRIORITY.get(cur, 99):
+        
+        # clear ВСЕГДА перезаписывает (сбрасывает любой статус)
+        if status == "clear":
+            # clear применяется всегда
+            pass
+        # Для остальных статусов: проверяем приоритет
+        elif cur is not None and STATUS_PRIORITY.get(status, 99) > STATUS_PRIORITY.get(cur, 99):
             if msg_id:
-                print(f"  ↳ {r}: {status} не приоритетнее {cur}")
+                print(f"  ↳ {r}: {status} (приор.{STATUS_PRIORITY.get(status,99)}) не приоритетнее {cur} (приор.{STATUS_PRIORITY.get(cur,99)})")
             continue
         
         region_statuses[r] = {
@@ -356,7 +370,7 @@ def process_message(text, msg_id=None, source="main"):
         if msg_id:
             print(f"  ✅ {r} → {status} (источник: {source})")
 
-# ---------- FLASK ЭНДПОИНТЫ ----------
+# ---------- FLASK ----------
 @app.route("/api/statuses")
 def get_statuses():
     now = datetime.now(timezone.utc)
@@ -464,7 +478,7 @@ def run_flask():
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
-# ---------- TELEGRAM КЛИЕНТ ----------
+# ---------- TELEGRAM ----------
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 async def poll_messages():
@@ -520,7 +534,6 @@ async def main():
     
     print("📥 Загружаем историю...")
     
-    # История основного канала
     try:
         history_main = await client.get_messages(CHANNEL_USERNAME, limit=100)
         if history_main:
@@ -532,7 +545,6 @@ async def main():
     except Exception as e:
         print(f"❌ Ошибка: {e}")
     
-    # История канала ДНР/ЛНР
     try:
         history_dpr = await client.get_messages(DPR_CHANNEL, limit=100)
         if history_dpr:
@@ -561,6 +573,8 @@ async def main():
     ║   📡 Канал ДНР/ЛНР: {DPR_CHANNEL}
     ║   📊 Статусов активно: {len(region_statuses)}
     ║   🔄 Обновление: 30 сек
+    ║   🎯 clear ВСЕГДА сбрасывает любой статус!
+    ║   🎯 Ракетная тревога имеет наивысший приоритет
     ╚═══════════════════════════════════════════════════╝
     """)
     
