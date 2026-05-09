@@ -345,6 +345,45 @@ alert_history = []
 last_msg_id_main = 0
 last_msg_id_dpr = 0
 
+PERSIST_FILE = "/tmp/radar_state.json"
+
+def save_state():
+    try:
+        state = {
+            "region_statuses": region_statuses,
+            "alert_history": alert_history[-2000:],
+            "last_msg_id_main": last_msg_id_main,
+            "last_msg_id_dpr": last_msg_id_dpr,
+            "saved_at": datetime.now(timezone.utc).isoformat()
+        }
+        with open(PERSIST_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False)
+        print(f"\u2764 State saved ({len(alert_history)} records)")
+    except Exception as e:
+        print(f"\u274c Save error: {e}")
+
+def load_state():
+    global region_statuses, alert_history, last_msg_id_main, last_msg_id_dpr
+    try:
+        if not os.path.exists(PERSIST_FILE):
+            print("\u2139 No state file found")
+            return
+        with open(PERSIST_FILE, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        saved_at = state.get("saved_at", "")
+        if saved_at:
+            age = datetime.now(timezone.utc) - datetime.fromisoformat(saved_at)
+            if age.total_seconds() > 48 * 3600:
+                print(f"\u2139 State too old ({age}), skipping")
+                return
+        region_statuses = state.get("region_statuses", {})
+        alert_history = state.get("alert_history", [])
+        last_msg_id_main = state.get("last_msg_id_main", 0)
+        last_msg_id_dpr = state.get("last_msg_id_dpr", 0)
+        print(f"\u2705 State loaded: {len(region_statuses)} regions, {len(alert_history)} history records")
+    except Exception as e:
+        print(f"\u274c Load error: {e}")
+
 
 def get_short_name(region):
     return REGION_SHORT_NAMES.get(region, region)
@@ -503,7 +542,7 @@ def detect_status(text):
     return None
 
 
-def process_message(text, msg_id=None, source="main"):
+def process_message(text, msg_id=None, source="main", msg_date=None, is_history=False):
     global region_statuses, alert_history
 
     if not text:
@@ -528,23 +567,32 @@ def process_message(text, msg_id=None, source="main"):
     if not status:
         return False
 
-    now = datetime.now(timezone.utc).isoformat()
-    clean_msg = clean_message_for_frontend(text)
+    # Используем реальное время сообщения если передано, иначе текущее
+    if msg_date is not None:
+        if msg_date.tzinfo is None:
+            msg_date = msg_date.replace(tzinfo=timezone.utc)
+        timestamp = msg_date.isoformat()
+    else:
+        timestamp = datetime.now(timezone.utc).isoformat()
 
+    clean_msg = clean_message_for_frontend(text)
     updated = False
 
     for r in regions:
-        cur = region_statuses.get(r, {}).get("status")
+        cur_data = region_statuses.get(r, {})
+        cur_status = cur_data.get("status")
 
-        if status != "clear":
-            if cur is not None and STATUS_PRIORITY.get(status, 99) > STATUS_PRIORITY.get(cur, 99):
+        # При загрузке истории — всегда перезаписываем (хронологический порядок)
+        # При реальном polling — соблюдаем приоритет (не перезаписывать более важный)
+        if not is_history and status != "clear":
+            if cur_status is not None and STATUS_PRIORITY.get(status, 99) > STATUS_PRIORITY.get(cur_status, 99):
                 if msg_id:
-                    print(f"  ↳ {r}: {status} не приоритетнее {cur}")
+                    print(f"  ↳ {r}: {status} не приоритетнее {cur_status}")
                 continue
 
         region_statuses[r] = {
             "status": status,
-            "last_update": now,
+            "last_update": timestamp,
             "message": clean_msg[:500] if clean_msg else "",
             "source": source
         }
@@ -552,7 +600,7 @@ def process_message(text, msg_id=None, source="main"):
         alert_history.append({
             "region": r,
             "status": status,
-            "timestamp": now,
+            "timestamp": timestamp,
             "message": clean_msg[:500] if clean_msg else "",
             "source": source
         })
@@ -663,6 +711,7 @@ def periodic_push():
         time.sleep(60)
         if region_statuses:
             push_to_github()
+            save_state()
 
 
 def keep_alive():
@@ -712,7 +761,7 @@ async def poll_messages():
                     if msg.message:
                         preview = msg.message[:80].replace('\n', ' ')
                         print(f"📩 [main] ID:{msg.id} | {preview}...")
-                        if process_message(msg.message, msg.id, source="main"):
+                        if process_message(msg.message, msg.id, source="main", msg_date=msg.date):
                             updated = True
                 if updated:
                     await send_report(client)
@@ -731,7 +780,7 @@ async def poll_messages():
                     if msg.message:
                         preview = msg.message[:80].replace('\n', ' ')
                         print(f"📩 [DPR] ID:{msg.id} | {preview}...")
-                        if process_message(msg.message, msg.id, source="dpr"):
+                        if process_message(msg.message, msg.id, source="dpr", msg_date=msg.date):
                             updated = True
                 if updated:
                     await send_report(client)
@@ -745,15 +794,25 @@ async def main():
 
     global last_msg_id_main, last_msg_id_dpr, region_statuses
 
-    print("📥 Загружаем историю...")
+    # Загружаем сохранённое состояние с диска
+    load_state()
+
+    # Запоминаем last_msg_id из загруженного состояния
+    last_msg_id_main_loaded = last_msg_id_main
+    last_msg_id_dpr_loaded = last_msg_id_dpr
+
+    print("📥 Загружаем историю из Telegram...")
 
     try:
         history_main = await client.get_messages(CHANNEL_USERNAME, limit=200)
         if history_main:
             last_msg_id_main = history_main[0].id
             for msg in reversed(history_main):
+                if msg.id <= last_msg_id_main_loaded:
+                    continue  # уже в загруженном состоянии
                 if msg.message:
-                    process_message(msg.message, msg.id, source="main")
+                    process_message(msg.message, msg.id, source="main",
+                                    msg_date=msg.date, is_history=True)
             print(f"✅ Обработано {len(history_main)} сообщений из основного канала")
     except Exception as e:
         print(f"❌ Ошибка: {e}")
@@ -763,8 +822,11 @@ async def main():
         if history_dpr:
             last_msg_id_dpr = history_dpr[0].id
             for msg in reversed(history_dpr):
+                if msg.id <= last_msg_id_dpr_loaded:
+                    continue  # уже в загруженном состоянии
                 if msg.message:
-                    process_message(msg.message, msg.id, source="dpr")
+                    process_message(msg.message, msg.id, source="dpr",
+                                    msg_date=msg.date, is_history=True)
             print(f"✅ Обработано {len(history_dpr)} сообщений из канала ДНР/ЛНР")
     except Exception as e:
         print(f"❌ Ошибка: {e}")
