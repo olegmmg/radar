@@ -152,8 +152,6 @@ REGION_ALIASES = {
     "Владикавказ": "Республика Северная Осетия",
     "Кабардино-Балкарская Республика": "Кабардино-Балкарская Республика",
     "Карачаево-Черкесская Республика": "Карачаево-Черкесская Республика",
-    "Причерноморье Краснодарского края": "Краснодарский край",
-    "Крымский мост": "Республика Крым",
     "Адыгея": "Республика Адыгея",
     
     # Уральский федеральный округ
@@ -163,7 +161,7 @@ REGION_ALIASES = {
     "Екатеринбург": "Свердловская область",
     "Курганская область": "Курганская область",
     "ЯНАО": "ЯНАО",
-    "Ямало-Ненецкий АО": "ЯНАО",
+    "Ямало-Ненецкий АО": "ЯНАO",
     "Ханты-Мансийский АО - Югра": "Ханты-Мансийский АО",
     "Тюменская область": "Тюменская область",
     
@@ -207,7 +205,6 @@ def clean_message_for_frontend(msg):
     if not msg:
         return ''
     
-    # Рекламные фразы для удаления
     ad_phrases = [
         r'❗️Радар по всей России\s*-\s*@radarrussiia\s*\n?',
         r'🌐 Обход белых списков\s*-\s*@Internet_Boost_bot\s*\([^)]+\)\s*\n?',
@@ -224,40 +221,37 @@ def clean_message_for_frontend(msg):
     for pattern in ad_phrases:
         cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE | re.MULTILINE)
     
-    # Удаляем лишние переводы строк
     cleaned = re.sub(r'\n\s*\n', '\n', cleaned)
     cleaned = cleaned.strip()
     
-    # Если после очистки осталась только дата/время - возвращаем пустоту
     if re.match(r'^[\d\s:\.-]+$', cleaned):
         return ''
     
     return cleaned
 
 def is_pure_ad_message(text):
-    """Проверяет, является ли сообщение чисто рекламным (без полезной информации)"""
+    """Проверяет, является ли сообщение чисто рекламным"""
     if not text:
         return False
     
-    t = text.lower()
-    
-    # Сначала очищаем от рекламных вставок для проверки
     cleaned = clean_message_for_frontend(text)
     
-    # Если после очистки ничего не осталось - это чистая реклама
     if not cleaned or len(cleaned) < 15:
         return True
     
-    # Если осталась полезная информация - не реклама
     return False
 
 def is_superseded_by_later(text):
     return bool(re.search(r"с \d{1,2}:\d{2} до \d{1,2}:\d{2}.*уничтожено", text, re.IGNORECASE))
 
 def extract_regions(text):
+    """Извлекает ВСЕ регионы из текста (с учётом переносов строк)"""
+    # Нормализуем текст: заменяем переносы строк и множественные пробелы на одинарные
+    normalized = ' '.join(text.split())
+    
     found = set()
     for alias, norm in REGION_ALIASES.items():
-        if alias in text:
+        if alias in normalized:
             found.add(norm)
     return list(found)
 
@@ -280,18 +274,23 @@ def detect_status(text):
     if "ложная цель" in t:
         return None
     
-    # 3. РАКЕТНАЯ ОПАСНОСТЬ
+    # 3. РАКЕТНАЯ ТРЕВОГА (включая ПКР и БЭК)
     if any(w in t for w in [
-        "ракетная тревога", "ракетная опасность", "ракетной опасности",
-        "авиационная ракетная опасность",
-        "тревога по пкр", "опасность по пкр", "опасность по бэк",
-        "пкр нептун", "пкр", "бэк"
+        "ракетная тревога", "ракетной тревоги",
+        "тревога по пкр", "тревога по бэк",
+        "пкр тревога", "бэк тревога"
     ]):
-        if "тревога" in t:
-            return "missile_alert"
+        return "missile_alert"
+    
+    # 4. РАКЕТНАЯ ОПАСНОСТЬ (включая ПКР и БЭК)
+    if any(w in t for w in [
+        "ракетная опасность", "ракетной опасности",
+        "опасность по пкр", "опасность по бэк",
+        "пкр опасность", "бэк опасность"
+    ]):
         return "missile_danger"
     
-    # 4. АТАКА БПЛА (активные действия)
+    # 5. АТАКА БПЛА (активные действия)
     if any(w in t for w in [
         "работа пво", "сбитие", "сбития",
         "фиксация бпла", "фиксации бпла",
@@ -305,7 +304,7 @@ def detect_status(text):
     ]):
         return "drone_attack"
     
-    # 5. ОПАСНОСТЬ БПЛА
+    # 6. ОПАСНОСТЬ БПЛА
     if any(w in t for w in [
         "опасность по бпла", "угроза атаки",
         "приготовиться к очередной волне",
@@ -315,13 +314,13 @@ def detect_status(text):
     ]):
         return "drone_danger"
     
-    # 6. СОХРАНЯЕТСЯ / ПОВТОРНО
+    # 7. СОХРАНЯЕТСЯ / ПОВТОРНО
     if "опасность по бпла сохраняется" in t:
         return "drone_danger"
     if "опасность по бпла" in t and "повторно" in t:
         return "drone_danger"
     
-    # 7. Формат "г. Город - опасность по БПЛА"
+    # 8. Формат "г. Город - опасность по БПЛА"
     if re.search(r"г\.\s*\S+.*опасность по бпла", t):
         return "drone_danger"
     
@@ -332,7 +331,6 @@ def process_message(text, msg_id=None):
     if not text:
         return
     
-    # Проверяем на чистую рекламу (без полезной информации)
     if is_pure_ad_message(text):
         if msg_id:
             print(f"  ↳ Чистая реклама (пропущено)")
@@ -356,8 +354,6 @@ def process_message(text, msg_id=None):
         return
     
     now = datetime.now(timezone.utc).isoformat()
-    
-    # Очищаем сообщение для отображения на фронтенде
     clean_msg = clean_message_for_frontend(text)
     
     for r in regions:
@@ -384,12 +380,11 @@ def process_message(text, msg_id=None):
             alert_history.pop(0)
         
         if msg_id:
-            print(f"  ✅ {r} → {status} (сообщение: {clean_msg[:50] if clean_msg else 'пусто'}...)")
+            print(f"  ✅ {r} → {status}")
 
 # ---------- FLASK ЭНДПОИНТЫ ----------
 @app.route("/api/statuses")
 def get_statuses():
-    """Возвращает статусы регионов с очищенными сообщениями"""
     now = datetime.now(timezone.utc)
     hour_ago = now - timedelta(hours=1)
     result = {"regions": {}, "last_updated": now.isoformat()}
@@ -413,7 +408,6 @@ def get_statuses():
 
 @app.route("/api/recent_alerts")
 def get_recent_alerts():
-    """Возвращает последние 50 оповещений"""
     filtered = []
     for alert in reversed(alert_history[-100:]):
         filtered.append(alert)
