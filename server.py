@@ -20,66 +20,22 @@ SESSION_STRING = os.environ["SESSION_STRING"]
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
 CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "radarrussiia")
-DPR_CHANNEL = os.environ.get("DPR_CHANNEL", "DPR_channel")  # Новый канал
+DPR_CHANNEL = os.environ.get("DPR_CHANNEL", "DPR_channel")
 
 print("✅ Конфигурация загружена")
 print(f"📡 Основной канал: {CHANNEL_USERNAME}")
 print(f"📡 Канал ДНР/ЛНР: {DPR_CHANNEL}")
 
-# Меньшее число = выше приоритет (missile_alert самый важный)
+# Приоритеты (меньше число = выше приоритет)
 STATUS_PRIORITY = {
-    "missile_alert": 0,     # РАКЕТНАЯ ТРЕВОГА - наивысший
-    "missile_danger": 1,    # РАКЕТНАЯ ОПАСНОСТЬ
-    "drone_attack": 2,      # АТАКА БПЛА
-    "drone_danger": 3,      # ОПАСНОСТЬ БПЛА
-    "clear": 4,             # ОТБОЙ - низший
-}
-
-# Регионы ДНР и ЛНР для маппинга
-DNR_LNR_REGIONS = {
-    # ДНР
-    "днр": "Донецкая Народная Республика",
-    "dnr": "Донецкая Народная Республика",
-    "донецк": "Донецкая Народная Республика",
-    "донецкая народная республика": "Донецкая Народная Республика",
-    "макеевка": "Донецкая Народная Республика",
-    "горловка": "Донецкая Народная Республика",
-    "енакиево": "Донецкая Народная Республика",
-    "шахтерск": "Донецкая Народная Республика",
-    "торез": "Донецкая Народная Республика",
-    "снежное": "Донецкая Народная Республика",
-    "харцызск": "Донецкая Народная Республика",
-    "ясиноватая": "Донецкая Народная Республика",
-    "авдеевка": "Донецкая Народная Республика",
-    "селидово": "Донецкая Народная Республика",
-    "курахово": "Донецкая Народная Республика",
-    "мариуполь": "Донецкая Народная Республика",
-    "новоазовск": "Донецкая Народная Республика",
-    "ялта днр": "Донецкая Народная Республика",
-    "урзуф": "Донецкая Народная Республика",
-    "докучаевск": "Донецкая Народная Республика",
-    "красноармейск": "Донецкая Народная Республика",
-    
-    # ЛНР
-    "лнр": "Луганская Народная Республика",
-    "lnr": "Луганская Народная Республика",
-    "луганск": "Луганская Народная Республика",
-    "луганская народная республика": "Луганская Народная Республика",
-    "алчевск": "Луганская Народная Республика",
-    "красный луч": "Луганская Народная Республика",
-    "ровеньки": "Луганская Народная Республика",
-    "свердловск": "Луганская Народная Республика",
-    "брянка": "Луганская Народная Республика",
-    "стаханов": "Луганская Народная Республика",
-    "первомайск": "Луганская Народная Республика",
-    "антрацит": "Луганская Народная Республика",
-    "старобельск": "Луганская Народная Республика",
-    "счастье": "Луганская Народная Республика",
-    "дебальцево": "Луганская Народная Республика",  # город в ДНР, но часто упоминается
+    "missile_alert": 0,
+    "missile_danger": 1,
+    "drone_attack": 2,
+    "drone_danger": 3,
+    "clear": 4,
 }
 
 REGION_ALIASES = {
-    # ... (все предыдущие алиасы остаются)
     "Московская область": "Московская область",
     "Московский регион": "Московская область",
     "Подмосковье": "Московская область",
@@ -216,13 +172,22 @@ REGION_ALIASES = {
     "Магаданская область": "Магаданская обл.",
     "Камчатский край": "Камчатский край",
     "Чукотский АО": "Чукотский АО",
-    
-    # ДНР и ЛНР для маппинга из GeoJSON
+    # ДНР, ЛНР, Запорожье, Херсон
     "Донецкая Народная Республика": "Донецкая область",
     "Луганская Народная Республика": "Луганская область",
-    "Донецкая область": "Донецкая область",
-    "Луганская область": "Луганская область",
+    "Запорожская область РФ": "Запорожская область",
+    "Запорожская область": "Запорожская область",
+    "Херсонская область РФ": "Херсонская область",
+    "Херсонская область": "Херсонская область",
 }
+
+# Регионы, которые могут обрабатываться из канала ДНР/ЛНР
+ALLOWED_DPR_REGIONS = [
+    "Донецкая Народная Республика",
+    "Луганская Народная Республика", 
+    "Запорожская область",
+    "Херсонская область"
+]
 
 region_statuses = {}
 alert_history = []
@@ -230,7 +195,6 @@ last_msg_id_main = 0
 last_msg_id_dpr = 0
 
 def clean_message_for_frontend(msg):
-    """Очищает сообщение от рекламных вставок"""
     if not msg:
         return ''
     
@@ -256,11 +220,9 @@ def clean_message_for_frontend(msg):
     return cleaned
 
 def is_pure_ad_message(text):
-    """Проверяет, является ли сообщение чисто рекламным"""
     if not text:
         return False
     
-    # Сообщения от ДНР канала не фильтруем как рекламу
     if "Радар ДНР" in text:
         return False
     
@@ -274,91 +236,66 @@ def is_superseded_by_later(text):
     return bool(re.search(r"с \d{1,2}:\d{2} до \d{1,2}:\d{2}.*уничтожено", text, re.IGNORECASE))
 
 def extract_regions(text):
-    """Извлекает все регионы из текста (включая ДНР/ЛНР)"""
     normalized = ' '.join(text.split())
     found = set()
     
-    # Проверяем основные регионы
     for alias, norm in REGION_ALIASES.items():
-        if alias in normalized:
+        if alias.lower() in normalized.lower():
             found.add(norm)
     
-    # Специальная проверка для ДНР/ЛНР по ключевым словам
     text_lower = normalized.lower()
     
-    # Проверяем наличие "ДНР", "ЛНР", "ЛДНР"
-    if re.search(r'\b(днр|dnr)\b', text_lower):
+    # ДНР/ЛНР по ключевым словам
+    if re.search(r'\b(днр|dnr|донецк|горловка|макеевка|енакиево)\b', text_lower):
         found.add("Донецкая Народная Республика")
-    if re.search(r'\b(лнр|lnr)\b', text_lower):
+    if re.search(r'\b(лнр|lnr|луганск|алчевск|брянка)\b', text_lower):
         found.add("Луганская Народная Республика")
     if re.search(r'\b(лднр|ldnr)\b', text_lower):
         found.add("Донецкая Народная Республика")
         found.add("Луганская Народная Республика")
     
-    # Проверяем города ДНР/ЛНР
-    for city, region in DNR_LNR_REGIONS.items():
-        if city in text_lower:
-            found.add(region)
+    # Запорожская и Херсонская области
+    if re.search(r'запорожск|zaporizh', text_lower):
+        found.add("Запорожская область")
+    if re.search(r'херсон|kherson', text_lower):
+        found.add("Херсонская область")
     
     return list(found)
 
 def detect_status(text):
     t = text.lower()
     
-    # 1. ОТБОЙ
-    if any(w in t for w in [
-        "отбой", "отбой опасности", "отбой по бпла",
-        "отбой ракетной опасности", "отбой ракетной тревоги",
-        "отбой фиксации", "отбой по пкр", "отбой по бэк"
-    ]):
-        if "опасность сохраняется" in t:
-            return "drone_danger"
+    # Отбой
+    if any(w in t for w in ["отбой", "отбой опасности", "отбой по бпла", "отбой ракетной опасности"]):
         return "clear"
     
-    # 2. ЛОЖНАЯ ЦЕЛЬ
+    # Ложная цель
     if "ложная цель" in t:
         return None
     
-    # 3. РАКЕТНАЯ ТРЕВОГА (включая ПКР, БЭК, авиационную)
-    if any(w in t for w in [
-        "ракетная тревога", "ракетной тревоги",
-        "тревога по пкр", "тревога по бэк",
-        "ракетно бомбовая опасность", "авиационная ракетная",
-        "авиационная ракетно бомбовая опасность"
-    ]):
+    # Ракетная тревога
+    if any(w in t for w in ["ракетная тревога", "тревога по пкр", "тревога по бэк", "ракетно бомбовая опасность", "авиационная ракетная"]):
         return "missile_alert"
     
-    # 4. РАКЕТНАЯ ОПАСНОСТЬ
-    if any(w in t for w in [
-        "ракетная опасность", "ракетной опасности",
-        "опасность по пкр", "опасность по бэк"
-    ]):
+    # Ракетная опасность
+    if any(w in t for w in ["ракетная опасность", "опасность по пкр", "опасность по бэк"]):
         return "missile_danger"
     
-    # 5. АТАКА БПЛА
-    if any(w in t for w in [
-        "работа пво", "сбитие", "сбития",
-        "фиксация бпла", "фиксации бпла",
-        "фиксация групп", "группа бпла", "много бпла",
-        "тревога по бпла", "атакуют", "атака бпла"
-    ]):
+    # Атака БПЛА
+    if any(w in t for w in ["работа пво", "сбитие", "фиксация бпла", "группа бпла", "тревога по бпла", "атака бпла"]):
         return "drone_attack"
     
-    # 6. ОПАСНОСТЬ БПЛА
-    if any(w in t for w in [
-        "опасность по бпла", "угроза атаки",
-        "внимание по бпла", "меры безопасности"
-    ]):
+    # Опасность БПЛА
+    if any(w in t for w in ["опасность по бпла", "угроза атаки", "внимание по бпла"]):
         return "drone_danger"
     
     return None
 
 def process_message(text, msg_id=None, source="main"):
-    """Обрабатывает сообщение из любого канала"""
     if not text:
         return
     
-    if is_pure_ad_message(text) and source == "main":
+    if source == "main" and is_pure_ad_message(text):
         if msg_id:
             print(f"  ↳ Реклама (пропущено)")
         return
@@ -373,6 +310,14 @@ def process_message(text, msg_id=None, source="main"):
         if msg_id:
             print(f"  ↳ Регионы не найдены")
         return
+    
+    # Для канала ДНР - только разрешённые регионы
+    if source == "dpr":
+        regions = [r for r in regions if r in ALLOWED_DPR_REGIONS]
+        if not regions:
+            if msg_id:
+                print(f"  ↳ Регион не из списка ДНР/ЛНР/Запорожье/Херсон (пропущено)")
+            return
     
     status = detect_status(text)
     if not status:
@@ -459,7 +404,7 @@ def index():
         "last_update": datetime.now(timezone.utc).isoformat()
     })
 
-# ---------- GITHUB СИНХРОНИЗАЦИЯ ----------
+# ---------- GITHUB ----------
 def push_to_github():
     if not GITHUB_TOKEN or not GITHUB_REPO:
         return
@@ -528,8 +473,8 @@ async def poll_messages():
     try:
         main_channel = await client.get_entity(CHANNEL_USERNAME)
         dpr_channel = await client.get_entity(DPR_CHANNEL)
-        print(f"✅ Основной канал: {main_channel.title} (ID: {main_channel.id})")
-        print(f"✅ Канал ДНР/ЛНР: {dpr_channel.title} (ID: {dpr_channel.id})")
+        print(f"✅ Основной канал: {main_channel.title}")
+        print(f"✅ Канал ДНР/ЛНР: {dpr_channel.title}")
     except Exception as e:
         print(f"❌ Ошибка получения каналов: {e}")
         return
@@ -537,37 +482,35 @@ async def poll_messages():
     while True:
         await asyncio.sleep(30)
         
-        # Обработка основного канала
+        # Основной канал
         try:
-            messages = await client.get_messages(CHANNEL_USERNAME, limit=15)
+            messages = await client.get_messages(CHANNEL_USERNAME, limit=30)
             if messages:
                 for msg in reversed(messages):
                     if msg.id <= last_msg_id_main:
                         continue
                     last_msg_id_main = msg.id
-                    text = msg.message
-                    if text:
-                        preview = text[:80].replace('\n', ' ')
+                    if msg.message:
+                        preview = msg.message[:80].replace('\n', ' ')
                         print(f"📩 [main] ID:{msg.id} | {preview}...")
-                        process_message(text, msg.id, source="main")
+                        process_message(msg.message, msg.id, source="main")
         except Exception as e:
-            print(f"❌ Ошибка при опросе основного канала: {e}")
+            print(f"❌ Ошибка основного канала: {e}")
         
-        # Обработка канала ДНР/ЛНР
+        # Канал ДНР/ЛНР
         try:
-            dpr_messages = await client.get_messages(DPR_CHANNEL, limit=15)
+            dpr_messages = await client.get_messages(DPR_CHANNEL, limit=30)
             if dpr_messages:
                 for msg in reversed(dpr_messages):
                     if msg.id <= last_msg_id_dpr:
                         continue
                     last_msg_id_dpr = msg.id
-                    text = msg.message
-                    if text:
-                        preview = text[:80].replace('\n', ' ')
+                    if msg.message:
+                        preview = msg.message[:80].replace('\n', ' ')
                         print(f"📩 [DPR] ID:{msg.id} | {preview}...")
-                        process_message(text, msg.id, source="dpr")
+                        process_message(msg.message, msg.id, source="dpr")
         except Exception as e:
-            print(f"❌ Ошибка при опросе канала ДНР/ЛНР: {e}")
+            print(f"❌ Ошибка канала ДНР/ЛНР: {e}")
 
 async def main():
     await client.start()
@@ -575,36 +518,33 @@ async def main():
     
     global last_msg_id_main, last_msg_id_dpr
     
-    print("📥 Загружаем историю (последние 100 сообщений)...")
+    print("📥 Загружаем историю...")
     
-    # Загружаем историю основного канала
+    # История основного канала
     try:
         history_main = await client.get_messages(CHANNEL_USERNAME, limit=100)
         if history_main:
             last_msg_id_main = history_main[0].id
-            print(f"📌 Основной канал, последнее сообщение ID: {last_msg_id_main}")
             for msg in reversed(history_main):
                 if msg.message:
                     process_message(msg.message, msg.id, source="main")
             print(f"✅ Обработано {len(history_main)} сообщений из основного канала")
     except Exception as e:
-        print(f"❌ Ошибка загрузки истории основного канала: {e}")
+        print(f"❌ Ошибка: {e}")
     
-    # Загружаем историю канала ДНР/ЛНР
+    # История канала ДНР/ЛНР
     try:
         history_dpr = await client.get_messages(DPR_CHANNEL, limit=100)
         if history_dpr:
             last_msg_id_dpr = history_dpr[0].id
-            print(f"📌 Канал ДНР/ЛНР, последнее сообщение ID: {last_msg_id_dpr}")
             for msg in reversed(history_dpr):
                 if msg.message:
                     process_message(msg.message, msg.id, source="dpr")
             print(f"✅ Обработано {len(history_dpr)} сообщений из канала ДНР/ЛНР")
     except Exception as e:
-        print(f"❌ Ошибка загрузки истории канала ДНР/ЛНР: {e}")
+        print(f"❌ Ошибка: {e}")
     
     print(f"📊 Статусов регионов: {len(region_statuses)}")
-    print(f"📝 Записей в истории: {len(alert_history)}")
     
     asyncio.create_task(poll_messages())
     print("🔄 Polling запущен (каждые 30 секунд)")
@@ -619,7 +559,6 @@ async def main():
     ╠═══════════════════════════════════════════════════╣
     ║   📡 Основной канал: {CHANNEL_USERNAME}
     ║   📡 Канал ДНР/ЛНР: {DPR_CHANNEL}
-    ║   🗺️  Регионов в базе: {len(REGION_ALIASES)}
     ║   📊 Статусов активно: {len(region_statuses)}
     ║   🔄 Обновление: 30 сек
     ╚═══════════════════════════════════════════════════╝
