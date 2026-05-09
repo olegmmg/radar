@@ -23,11 +23,13 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
 CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "radarrussiia")
 DPR_CHANNEL = os.environ.get("DPR_CHANNEL", "DPR_channel")
 REPORT_CHANNEL = os.environ.get("REPORT_CHANNEL", "RadarMapRf")
+STATUS_EXPIRY_HOURS = int(os.environ.get("STATUS_EXPIRY_HOURS", 12))  # Устаревание через 12 часов
 
 print("✅ Конфигурация загружена")
 print(f"📡 Основной канал: {CHANNEL_USERNAME}")
 print(f"📡 Канал ДНР/ЛНР: {DPR_CHANNEL}")
 print(f"📢 Канал для сводок: @{REPORT_CHANNEL}")
+print(f"⏰ Статусы устаревают через: {STATUS_EXPIRY_HOURS} часов")
 
 # Приоритеты (меньше число = выше приоритет)
 STATUS_PRIORITY = {
@@ -291,6 +293,39 @@ last_msg_id_dpr = 0
 
 PERSIST_FILE = "/tmp/radar_state.json"
 
+def expire_old_statuses():
+    """Устанавливает статус clear для регионов, у которых последнее обновление старше STATUS_EXPIRY_HOURS часов"""
+    global region_statuses
+    now = datetime.now(timezone.utc)
+    expiry_time = now - timedelta(hours=STATUS_EXPIRY_HOURS)
+    expired_count = 0
+    
+    for region, data in list(region_statuses.items()):
+        last_update_str = data.get("last_update")
+        if not last_update_str:
+            continue
+        
+        try:
+            last_update = datetime.fromisoformat(last_update_str)
+            if last_update.tzinfo is None:
+                last_update = last_update.replace(tzinfo=timezone.utc)
+            
+            if last_update < expiry_time and data.get("status") != "clear":
+                region_statuses[region] = {
+                    "status": "clear",
+                    "last_update": now.isoformat(),
+                    "message": f"Автоматический отбой (нет обновлений >{STATUS_EXPIRY_HOURS}ч)",
+                    "source": data.get("source", "system")
+                }
+                expired_count += 1
+                print(f"  ⏰ {region}: статус устарел → clear")
+        except Exception as e:
+            print(f"  ⚠️ Ошибка парсинга даты для {region}: {e}")
+    
+    if expired_count > 0:
+        print(f"✅ Устарело {expired_count} регионов (автоматический отбой)")
+        save_state()
+
 def save_state():
     try:
         state = {
@@ -548,6 +583,16 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
 
     return updated
 
+# ---------- ФОНОВАЯ ЗАДАЧА ДЛЯ УСТАРЕВАНИЯ СТАТУСОВ ----------
+def periodic_expire():
+    """Запускает проверку устаревших статусов каждые 10 минут"""
+    while True:
+        time.sleep(600)  # 10 минут
+        try:
+            expire_old_statuses()
+        except Exception as e:
+            print(f"❌ Ошибка при устаревании статусов: {e}")
+
 # ---------- FLASK ----------
 @app.route("/api/statuses")
 def get_statuses():
@@ -719,6 +764,9 @@ async def main():
 
     load_state()
 
+    # Применяем устаревание к загруженному состоянию
+    expire_old_statuses()
+
     last_msg_id_main_loaded = last_msg_id_main
     last_msg_id_dpr_loaded = last_msg_id_dpr
 
@@ -770,6 +818,9 @@ async def main():
     except Exception as e:
         print(f"❌ Ошибка канала ДНР/ЛНР: {e}")
 
+    # Ещё раз применяем устаревание после загрузки истории
+    expire_old_statuses()
+
     print(f"📊 Статусов регионов: {len(region_statuses)}")
     print(f"📋 Записей в истории: {len(alert_history)}")
 
@@ -778,6 +829,8 @@ async def main():
     asyncio.create_task(poll_messages())
     print("🔄 Polling запущен (каждые 30 секунд)")
 
+    # Запускаем фоновую задачу устаревания статусов
+    threading.Thread(target=periodic_expire, daemon=True).start()
     threading.Thread(target=run_flask, daemon=True).start()
     threading.Thread(target=keep_alive, daemon=True).start()
     threading.Thread(target=periodic_push, daemon=True).start()
@@ -792,6 +845,7 @@ async def main():
     ║   📊 Статусов активно: {len(region_statuses)}
     ║   📋 Записей в истории: {len(alert_history)}
     ║   🔄 Обновление: 30 сек
+    ║   ⏰ Устаревание статусов: {STATUS_EXPIRY_HOURS} часов
     ║   📥 История: последовательная обработка
     ╚═══════════════════════════════════════════════════╝
     """)
