@@ -200,12 +200,12 @@ alert_history = []
 last_msg_id = 0
 
 def clean_message_for_frontend(msg):
-    """Очищает сообщение от рекламы для отображения на фронтенде"""
+    """Очищает сообщение от рекламных вставок для отображения на фронтенде"""
     if not msg:
         return ''
     
-    # Удаляем все рекламные паттерны
-    patterns_to_remove = [
+    # Рекламные фразы для удаления
+    ad_phrases = [
         r'❗️Радар по всей России\s*-\s*@radarrussiia\s*\n?',
         r'🌐 Обход белых списков\s*-\s*@Internet_Boost_bot\s*\([^)]+\)\s*\n?',
         r'@radarrussiia\s*\n?',
@@ -213,43 +213,39 @@ def clean_message_for_frontend(msg):
         r'https?://t\.me/Internet_Boost_bot\S*\s*\n?',
         r'Радар по всей России.*?\n',
         r'Обход белых списков.*?\n',
+        r'❗️Радар по всей России.*?$',
+        r'🌐 Обход белых списков.*?$',
     ]
     
     cleaned = msg
-    for pattern in patterns_to_remove:
-        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+    for pattern in ad_phrases:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE | re.MULTILINE)
     
-    # Удаляем лишние пустые строки
+    # Удаляем лишние переводы строк
     cleaned = re.sub(r'\n\s*\n', '\n', cleaned)
+    cleaned = cleaned.strip()
     
-    return cleaned.strip()
+    # Если после очистки осталась только дата/время - возвращаем пустоту
+    if re.match(r'^[\d\s:\.-]+$', cleaned):
+        return ''
+    
+    return cleaned
 
-def is_ad_message(text):
-    """Проверяет, является ли сообщение рекламным"""
+def is_pure_ad_message(text):
+    """Проверяет, является ли сообщение чисто рекламным (без полезной информации)"""
     if not text:
         return False
     
     t = text.lower()
     
-    # Рекламные паттерны
-    ad_patterns = [
-        "платим от", "отзыв на ozon", "взять подработку",
-        "заработок", "вакансия", "работа в интернете",
-        "радар по всей россии", "@radarrussiia",
-        "обход белых списков", "@internet_boost_bot",
-        "t.me/internet_boost_bot",
-        "❗️радар по всей россии",
-        "🌐 обход белых списков",
-    ]
+    # Сначала очищаем от рекламных вставок для проверки
+    cleaned = clean_message_for_frontend(text)
     
-    for pattern in ad_patterns:
-        if pattern in t:
-            return True
-    
-    # Проверка на длинные ссылки-приглашения
-    if re.search(r'https?://t\.me/\S+\?start=\S+', t):
+    # Если после очистки ничего не осталось - это чистая реклама
+    if not cleaned or len(cleaned) < 15:
         return True
     
+    # Если осталась полезная информация - не реклама
     return False
 
 def is_superseded_by_later(text):
@@ -281,7 +277,7 @@ def detect_status(text):
     if "ложная цель" in t:
         return None
     
-    # 3. РАКЕТНАЯ ОПАСНОСТЬ (включая ПКР Нептун и БЭК)
+    # 3. РАКЕТНАЯ ОПАСНОСТЬ
     if any(w in t for w in [
         "ракетная тревога", "ракетная опасность", "ракетной опасности",
         "авиационная ракетная опасность",
@@ -306,7 +302,7 @@ def detect_status(text):
     ]):
         return "drone_attack"
     
-    # 5. ОПАСНОСТЬ БПЛА (предупреждения)
+    # 5. ОПАСНОСТЬ БПЛА
     if any(w in t for w in [
         "опасность по бпла", "угроза атаки",
         "приготовиться к очередной волне",
@@ -333,10 +329,10 @@ def process_message(text, msg_id=None):
     if not text:
         return
     
-    # Рекламные сообщения полностью игнорируем
-    if is_ad_message(text):
+    # Проверяем на чистую рекламу (без полезной информации)
+    if is_pure_ad_message(text):
         if msg_id:
-            print(f"  ↳ Реклама (пропущено)")
+            print(f"  ↳ Чистая реклама (пропущено)")
         return
     
     if is_superseded_by_later(text):
@@ -359,11 +355,10 @@ def process_message(text, msg_id=None):
     now = datetime.now(timezone.utc).isoformat()
     
     # Очищаем сообщение для отображения на фронтенде
-    clean_msg = clean_message_for_frontend(text)[:500]
+    clean_msg = clean_message_for_frontend(text)
     
     for r in regions:
         cur = region_statuses.get(r, {}).get("status")
-        # Меньшее число = выше приоритет, поэтому новый статус применяется если он МЕНЬШЕ или равен
         if cur is not None and STATUS_PRIORITY.get(status, 99) > STATUS_PRIORITY.get(cur, 99):
             if msg_id:
                 print(f"  ↳ {r}: {status} не приоритетнее {cur}")
@@ -372,23 +367,21 @@ def process_message(text, msg_id=None):
         region_statuses[r] = {
             "status": status, 
             "last_update": now, 
-            "message": clean_msg
+            "message": clean_msg[:500] if clean_msg else ""
         }
         
-        # Сохраняем в историю с очищенным сообщением
         alert_history.append({
             "region": r, 
             "status": status, 
             "timestamp": now,
-            "message": clean_msg
+            "message": clean_msg[:500] if clean_msg else ""
         })
         
-        # Ограничиваем историю до 1000 записей
         if len(alert_history) > 1000:
             alert_history.pop(0)
         
         if msg_id:
-            print(f"  ✅ {r} → {status}")
+            print(f"  ✅ {r} → {status} (сообщение: {clean_msg[:50] if clean_msg else 'пусто'}...)")
 
 # ---------- FLASK ЭНДПОИНТЫ ----------
 @app.route("/api/statuses")
@@ -399,21 +392,17 @@ def get_statuses():
     result = {"regions": {}, "last_updated": now.isoformat()}
     
     for r, d in region_statuses.items():
-        # Считаем алерты за последний час
         count = 0
-        for a in reversed(alert_history[-200:]):  # проверяем последние 200 записей
+        for a in reversed(alert_history[-200:]):
             if a["region"] == r:
                 at = datetime.fromisoformat(a["timestamp"])
                 if at > hour_ago:
                     count += 1
         
-        # Очищаем сообщение ещё раз перед отправкой
-        clean_msg = clean_message_for_frontend(d.get("message", ""))
-        
         result["regions"][r] = {
             "status": d["status"], 
             "last_update": d["last_update"], 
-            "message": clean_msg,
+            "message": d.get("message", ""),
             "alerts_last_hour": count
         }
     
@@ -421,16 +410,10 @@ def get_statuses():
 
 @app.route("/api/recent_alerts")
 def get_recent_alerts():
-    """Возвращает последние 50 оповещений без рекламы"""
-    # Берём последние 100 записей и фильтруем
+    """Возвращает последние 50 оповещений"""
     filtered = []
     for alert in reversed(alert_history[-100:]):
-        # Сообщения уже отфильтрованы при добавлении, но на всякий случай проверяем again
-        if not is_ad_message(alert.get("message", "")):
-            # Копируем и очищаем сообщение
-            clean_alert = alert.copy()
-            clean_alert["message"] = clean_message_for_frontend(alert.get("message", ""))
-            filtered.append(clean_alert)
+        filtered.append(alert)
         if len(filtered) >= 50:
             break
     
@@ -457,7 +440,6 @@ def push_to_github():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/data/statuses.json"
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     
-    # Подготавливаем данные для экспорта
     export_data = {
         "regions": {},
         "last_updated": datetime.now(timezone.utc).isoformat()
@@ -467,7 +449,7 @@ def push_to_github():
         export_data["regions"][r] = {
             "status": d["status"],
             "last_update": d["last_update"],
-            "message": clean_message_for_frontend(d.get("message", ""))
+            "message": d.get("message", "")
         }
     
     content = json.dumps(export_data, ensure_ascii=False, indent=2)
@@ -491,17 +473,15 @@ def push_to_github():
 
 # ---------- ФОНОВЫЕ ЗАДАЧИ ----------
 def periodic_push():
-    """Периодическая отправка данных в GitHub"""
     while True:
-        time.sleep(60)  # Каждую минуту
+        time.sleep(60)
         if region_statuses:
             push_to_github()
 
 def keep_alive():
-    """Само-пинг для поддержания работы сервера"""
     port = int(os.environ.get("PORT", 5000))
     while True:
-        time.sleep(240)  # Каждые 4 минуты
+        time.sleep(240)
         try:
             requests.get(f"http://localhost:{port}/api/statuses", timeout=10)
             print("💓 Self-ping OK")
@@ -509,7 +489,6 @@ def keep_alive():
             print(f"💔 Self-ping failed: {e}")
 
 def run_flask():
-    """Запуск Flask сервера"""
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
@@ -517,7 +496,6 @@ def run_flask():
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 async def poll_messages():
-    """Периодический опрос новых сообщений в Telegram"""
     global last_msg_id
     
     try:
@@ -528,13 +506,12 @@ async def poll_messages():
         return
     
     while True:
-        await asyncio.sleep(30)  # Каждые 30 секунд
+        await asyncio.sleep(30)
         try:
             messages = await client.get_messages(CHANNEL_USERNAME, limit=15)
             if not messages:
                 continue
             
-            # Обрабатываем сообщения от старых к новым
             for msg in reversed(messages):
                 if msg.id <= last_msg_id:
                     continue
@@ -546,16 +523,14 @@ async def poll_messages():
                 process_message(text, msg.id)
                 
         except Exception as e:
-            print(f"❌ Ошибка при опросе сообщений: {e}")
+            print(f"❌ Ошибка при опросе: {e}")
 
 async def main():
-    """Главная асинхронная функция"""
     await client.start()
     print("✅ Telegram клиент запущен")
     
     global last_msg_id
     
-    # Загружаем последние 100 сообщений для восстановления состояния
     print("📥 Загружаем историю (последние 100 сообщений)...")
     try:
         history = await client.get_messages(CHANNEL_USERNAME, limit=100)
@@ -563,7 +538,6 @@ async def main():
             last_msg_id = history[0].id
             print(f"📌 Последнее сообщение ID: {last_msg_id}")
             
-            # Обрабатываем от старых к новым
             processed_count = 0
             for msg in reversed(history):
                 text = msg.message
@@ -573,17 +547,15 @@ async def main():
                     process_message(text, msg.id)
                     processed_count += 1
             
-            print(f"✅ Загружено и обработано {processed_count} сообщений")
+            print(f"✅ Загружено {processed_count} сообщений")
             print(f"📊 Статусов регионов: {len(region_statuses)}")
             print(f"📝 Записей в истории: {len(alert_history)}")
     except Exception as e:
         print(f"❌ Ошибка загрузки истории: {e}")
     
-    # Запускаем фоновые задачи
     asyncio.create_task(poll_messages())
     print("🔄 Polling запущен (каждые 30 секунд)")
     
-    # Запускаем Flask и другие фоновые потоки
     threading.Thread(target=run_flask, daemon=True).start()
     threading.Thread(target=keep_alive, daemon=True).start()
     threading.Thread(target=periodic_push, daemon=True).start()
@@ -599,7 +571,6 @@ async def main():
     ╚═══════════════════════════════════════╝
     """)
     
-    # Держим асинхронный цикл активным
     while True:
         await asyncio.sleep(1)
 
