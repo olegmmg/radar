@@ -401,7 +401,7 @@ def format_summary(regions):
     message += "🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ*\n"
     message += ("\n".join(medium_alerts) if medium_alerts else "    • Отсутствуют") + "\n\n"
     message += "---\n📍 [Карта тревог](https://olegmmg.github.io/Radar/)"
-    message += "---\n📍 [TG Радар Россия](https://t.me/RadarMapRf)"
+    message += "\n📍 [TG Радар Россия](https://t.me/RadarMapRf)"
 
     return message
 
