@@ -28,11 +28,11 @@ print(f"📡 Канал ДНР/ЛНР: {DPR_CHANNEL}")
 
 # Приоритеты (меньше число = выше приоритет)
 STATUS_PRIORITY = {
-    "missile_alert": 0,
-    "missile_danger": 1,
-    "drone_attack": 2,
-    "drone_danger": 3,
-    "clear": 4,
+    "clear": 0,
+    "missile_alert": 1,
+    "missile_danger": 2,
+    "drone_attack": 3,
+    "drone_danger": 4,
 }
 
 REGION_ALIASES = {
