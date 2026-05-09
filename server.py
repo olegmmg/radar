@@ -395,11 +395,11 @@ def format_summary(regions):
     now = datetime.now(timezone.utc) + timedelta(hours=3)
     time_str = now.strftime("%H:%M | %d/%m")
 
-    message = f"🛸 *Воздушная тревога* 🚀\n`{time_str}`\n\n"
-    message += "🔴 *АКТИВНАЯ ТРЕВОГА* 🔴\n"
-    message += ("\n".join(high_alerts) if high_alerts else "    • НЕТ") + "\n\n"
-    message += "🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ* 🟡\n"
-    message += ("\n".join(medium_alerts) if medium_alerts else "    • НЕТ") + "\n\n"
+    message = f"✈️ *Воздушная тревога* 🚀\n`{time_str}`\n\n"
+    message += "🔴 *АКТИВНАЯ ТРЕВОГА*\n"
+    message += ("\n".join(high_alerts) if high_alerts else "    • Отсутствуют") + "\n\n"
+    message += "🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ*\n"
+    message += ("\n".join(medium_alerts) if medium_alerts else "    • Отсутствуют") + "\n\n"
     message += "---\n📍 [Карта тревог](https://olegmmg.github.io/Radar/)"
 
     return message
