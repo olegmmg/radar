@@ -40,9 +40,6 @@ STATUS_PRIORITY = {
     "clear": 4,
 }
 
-HIGH_PRIORITY_STATUSES = ["missile_alert", "missile_danger", "drone_attack"]
-MEDIUM_PRIORITY_STATUSES = ["drone_danger"]
-
 REGION_SHORT_NAMES = {
     "Московская область": "Московская обл.",
     "Москва": "Москва",
@@ -134,7 +131,7 @@ REGION_SHORT_NAMES = {
     "Республика Калмыкия": "Респ. Калмыкия",
 }
 
-last_summary = {"high": [], "medium": [], "timestamp": None}
+last_summary = {"missile_alert": [], "missile_danger": [], "drone_attack": [], "drone_danger": [], "timestamp": None}
 
 REGION_ALIASES = {
     "Московская область": "Московская область",
@@ -371,8 +368,10 @@ def get_short_name(region):
     return REGION_SHORT_NAMES.get(region, region)
 
 def format_summary(regions):
-    high_alerts = []
-    medium_alerts = []
+    missile_alert = []     # 🔴 РАКЕТНАЯ ТРЕВОГА
+    missile_danger = []    # 🟠 РАКЕТНАЯ ОПАСНОСТЬ
+    drone_attack = []      # 🔵 ТРЕВОГА ПО БПЛА (синий)
+    drone_danger = []      # 🟡 ОПАСНОСТЬ ПО БПЛА
 
     for region, data in regions.items():
         status = data.get("status")
@@ -380,30 +379,55 @@ def format_summary(regions):
             continue
         
         short_name = get_short_name(region)
-        if status in HIGH_PRIORITY_STATUSES:
-            high_alerts.append(f"    • {short_name}")
-        elif status in MEDIUM_PRIORITY_STATUSES:
-            medium_alerts.append(f"    • {short_name}")
+        
+        if status == "missile_alert":
+            missile_alert.append(f"    • {short_name}")
+        elif status == "missile_danger":
+            missile_danger.append(f"    • {short_name}")
+        elif status == "drone_attack":
+            drone_attack.append(f"    • {short_name}")
+        elif status == "drone_danger":
+            drone_danger.append(f"    • {short_name}")
 
-    high_alerts.sort()
-    medium_alerts.sort()
+    missile_alert.sort()
+    missile_danger.sort()
+    drone_attack.sort()
+    drone_danger.sort()
 
     global last_summary
-    if last_summary["high"] == high_alerts and last_summary["medium"] == medium_alerts:
+    current = {
+        "missile_alert": missile_alert,
+        "missile_danger": missile_danger,
+        "drone_attack": drone_attack,
+        "drone_danger": drone_danger
+    }
+    
+    if (last_summary.get("missile_alert") == missile_alert and
+        last_summary.get("missile_danger") == missile_danger and
+        last_summary.get("drone_attack") == drone_attack and
+        last_summary.get("drone_danger") == drone_danger):
         return None
 
-    last_summary["high"] = high_alerts
-    last_summary["medium"] = medium_alerts
+    last_summary = current
     last_summary["timestamp"] = datetime.now(timezone.utc)
 
     now = datetime.now(timezone.utc) + timedelta(hours=3)
     time_str = now.strftime("%H:%M | %d/%m")
 
     message = f"✈️ *Воздушная тревога* 🚀\n`{time_str}`\n\n"
-    message += "🔴 *АКТИВНАЯ ТРЕВОГА*\n"
-    message += ("\n".join(high_alerts) if high_alerts else "    • Отсутствуют") + "\n\n"
-    message += "🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ*\n"
-    message += ("\n".join(medium_alerts) if medium_alerts else "    • Отсутствуют") + "\n\n"
+    
+    message += "🟤 *РАКЕТНАЯ ТРЕВОГА*\n"
+    message += ("\n".join(missile_alert) if missile_alert else "    • Отсутствуют") + "\n\n"
+    
+    message += "🔴 *РАКЕТНАЯ ОПАСНОСТЬ*\n"
+    message += ("\n".join(missile_danger) if missile_danger else "    • Отсутствуют") + "\n\n"
+    
+    message += "🟠 *ТРЕВОГА ПО БПЛА*\n"
+    message += ("\n".join(drone_attack) if drone_attack else "    • Отсутствуют") + "\n\n"
+    
+    message += "🟡 *ОПАСНОСТЬ ПО БПЛА*\n"
+    message += ("\n".join(drone_danger) if drone_danger else "    • Отсутствуют") + "\n\n"
+    
     message += "---\n📍 [Карта тревог](https://olegmmg.github.io/Radar/)"
     message += "\n📍 [TG Радар Россия](https://t.me/RadarMapRf)"
 
@@ -859,6 +883,7 @@ async def main():
     ║   🔄 Обновление: 30 сек
     ║   ⏰ Устаревание статусов: {STATUS_EXPIRY_HOURS} часов
     ║   📥 История: последовательная обработка
+    ║   🎨 Цвета: 🔴 ракетная тревога | 🟠 ракетная опасность | 🔵 тревога БПЛА | 🟡 опасность БПЛА
     ╚═══════════════════════════════════════════════════╝
     """)
 
