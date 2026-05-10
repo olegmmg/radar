@@ -671,4 +671,9 @@ def get_recent_alerts():
     filtered = list(reversed(alert_history[-100:]))[:50]
     return jsonify({
         "alerts": filtered,
-        "total": len
+        "total": len(alert_history)
+    })
+
+if __name__ == "__main__":
+    load_state()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
