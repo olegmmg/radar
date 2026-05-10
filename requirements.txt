@@ -2,3 +2,4 @@ flask
 telethon
 requests
 cryptg
+Pillow>=9.0.0
