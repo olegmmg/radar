@@ -23,7 +23,7 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
 CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "radarrussiia")
 DPR_CHANNEL = os.environ.get("DPR_CHANNEL", "DPR_channel")
 REPORT_CHANNEL = os.environ.get("REPORT_CHANNEL", "RadarMapRf")
-STATUS_EXPIRY_HOURS = int(os.environ.get("STATUS_EXPIRY_HOURS", 12))  # Устаревание через 12 часов
+STATUS_EXPIRY_HOURS = int(os.environ.get("STATUS_EXPIRY_HOURS", 12))
 
 print("✅ Конфигурация загружена")
 print(f"📡 Основной канал: {CHANNEL_USERNAME}")
@@ -299,6 +299,7 @@ def expire_old_statuses():
     now = datetime.now(timezone.utc)
     expiry_time = now - timedelta(hours=STATUS_EXPIRY_HOURS)
     expired_count = 0
+    changed = False
     
     for region, data in list(region_statuses.items()):
         last_update_str = data.get("last_update")
@@ -318,6 +319,7 @@ def expire_old_statuses():
                     "source": data.get("source", "system")
                 }
                 expired_count += 1
+                changed = True
                 print(f"  ⏰ {region}: статус устарел → clear")
         except Exception as e:
             print(f"  ⚠️ Ошибка парсинга даты для {region}: {e}")
@@ -325,6 +327,8 @@ def expire_old_statuses():
     if expired_count > 0:
         print(f"✅ Устарело {expired_count} регионов (автоматический отбой)")
         save_state()
+    
+    return changed
 
 def save_state():
     try:
@@ -586,11 +590,18 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
 
 # ---------- ФОНОВАЯ ЗАДАЧА ДЛЯ УСТАРЕВАНИЯ СТАТУСОВ ----------
 def periodic_expire():
-    """Запускает проверку устаревших статусов каждые 10 минут"""
+    """Запускает проверку устаревших статусов каждые 10 минут и отправляет сводку если были изменения"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     while True:
         time.sleep(600)  # 10 минут
         try:
-            expire_old_statuses()
+            print("🔍 Проверка устаревших статусов...")
+            changed = expire_old_statuses()
+            if changed:
+                print("📢 Отправляем обновлённую сводку после устаревания...")
+                loop.run_until_complete(send_report(client))
         except Exception as e:
             print(f"❌ Ошибка при устаревании статусов: {e}")
 
