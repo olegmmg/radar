@@ -1,9 +1,10 @@
-import os, re, json, base64, threading, time, requests, asyncio
+import os, re, json, base64, threading, time, requests, asyncio, io
 from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify, request
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
+from PIL import Image, ImageDraw, ImageFont
 
 app = Flask(__name__)
 
@@ -131,7 +132,7 @@ REGION_SHORT_NAMES = {
     "Республика Калмыкия": "Респ. Калмыкия",
 }
 
-last_summary = {"missile_alert": [], "missile_danger": [], "drone_attack": [], "drone_danger": [], "timestamp": None}
+last_summary = {"drone_danger": [], "drone_attack": [], "missile_danger": [], "missile_alert": [], "timestamp": None}
 
 REGION_ALIASES = {
     "Московская область": "Московская область",
@@ -293,6 +294,84 @@ PERSIST_FILE = "/tmp/radar_state.json"
 # Глобальная переменная для клиента Telegram
 telegram_client = None
 
+def generate_map_image():
+    """Генерирует изображение карты с отметками тревог"""
+    
+    width = 800
+    height = 600
+    
+    img = Image.new('RGB', (width, height), color='#1a1a2e')
+    draw = ImageDraw.Draw(img)
+    
+    try:
+        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+        font_header = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
+        font_text = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+    except:
+        font_title = ImageFont.load_default()
+        font_header = ImageFont.load_default()
+        font_text = ImageFont.load_default()
+    
+    # Заголовок
+    draw.text((width//2, 30), "🚨 КАРТА ВОЗДУШНЫХ ТРЕВОГ 🚨", fill="white", anchor="mt", font=font_title)
+    
+    # Разделяем регионы
+    active_regions = []
+    potential_regions = []
+    
+    for region, data in region_statuses.items():
+        status = data.get("status")
+        if not status or status == "clear":
+            continue
+        
+        short_name = get_short_name(region)
+        
+        if status in ["missile_alert", "missile_danger", "drone_attack"]:
+            active_regions.append(f"🔴 {short_name}")
+        elif status == "drone_danger":
+            potential_regions.append(f"🟡 {short_name}")
+    
+    # Активная тревога
+    y = 80
+    draw.rectangle([30, y-5, width-30, y+25], fill="#330000", outline="#ff4444")
+    draw.text((50, y), "АКТИВНАЯ ТРЕВОГА", fill="#ff4444", font=font_header)
+    
+    y += 40
+    if active_regions:
+        for i, region in enumerate(active_regions[:18]):
+            draw.text((50, y + i*22), region, fill="#ff8888", font=font_text)
+        if len(active_regions) > 18:
+            draw.text((50, y + 18*22), f"...и еще {len(active_regions)-18} регионов", fill="#888888", font=font_text)
+        y += max(22 * min(len(active_regions), 18), 22) + 20
+    else:
+        draw.text((50, y), "Отсутствует", fill="#888888", font=font_text)
+        y += 40
+    
+    # Потенциальная опасность
+    draw.rectangle([30, y-5, width-30, y+25], fill="#331c00", outline="#ffaa44")
+    draw.text((50, y), "ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ", fill="#ffaa44", font=font_header)
+    
+    y += 40
+    if potential_regions:
+        for i, region in enumerate(potential_regions[:14]):
+            draw.text((50, y + i*22), region, fill="#ffcc88", font=font_text)
+        if len(potential_regions) > 14:
+            draw.text((50, y + 14*22), f"...и еще {len(potential_regions)-14} регионов", fill="#888888", font=font_text)
+    else:
+        draw.text((50, y), "Отсутствует", fill="#888888", font=font_text)
+    
+    # Нижняя часть
+    now = datetime.now(timezone.utc) + timedelta(hours=3)
+    time_str = now.strftime("%H:%M | %d.%m.%Y")
+    draw.text((width//2, height - 30), f"Обновлено: {time_str}", fill="#666666", anchor="mt", font=font_text)
+    draw.text((width//2, height - 10), "olegmmg.github.io/Radar", fill="#4444ff", anchor="mt", font=font_text)
+    
+    img_buffer = io.BytesIO()
+    img.save(img_buffer, format='PNG')
+    img_buffer.seek(0)
+    
+    return img_buffer
+
 def expire_old_statuses():
     """Устанавливает статус clear для регионов, у которых последнее обновление старше STATUS_EXPIRY_HOURS часов"""
     global region_statuses, last_summary
@@ -326,8 +405,7 @@ def expire_old_statuses():
     
     if expired_count > 0:
         print(f"✅ Устарело {expired_count} регионов (автоматический отбой)")
-        # Сбрасываем last_summary, чтобы при следующей проверке отправилась сводка
-        last_summary = {"missile_alert": [], "missile_danger": [], "drone_attack": [], "drone_danger": [], "timestamp": None}
+        last_summary = {"drone_danger": [], "drone_attack": [], "missile_danger": [], "missile_alert": [], "timestamp": None}
         save_state()
     
     return changed
@@ -428,11 +506,11 @@ def format_summary(regions):
 
     message = f"✈️ *Воздушная тревога* 🚀\n`{time_str}`\n\n"
     
-    # АКТИВНАЯ ТРЕВОГА (объединённый блок)
+    # АКТИВНАЯ ТРЕВОГА
     active_alerts = []
-    active_alerts.extend(missile_alert)      # 🟤 РАКЕТНАЯ ТРЕВОГА
-    active_alerts.extend(missile_danger)     # 🔴 РАКЕТНАЯ ОПАСНОСТЬ
-    active_alerts.extend(drone_attack)       # 🟠 ТРЕВОГА ПО БПЛА
+    active_alerts.extend(missile_alert)
+    active_alerts.extend(missile_danger)
+    active_alerts.extend(drone_attack)
     
     message += "🔴 *АКТИВНАЯ ТРЕВОГА*\n"
     if active_alerts:
@@ -456,14 +534,26 @@ async def send_report(client):
     if not region_statuses:
         print("⚠️ Нет данных о регионах, сводка не отправлена")
         return
-    summary = format_summary(region_statuses)
-    if summary is None:
+    
+    summary_text = format_summary(region_statuses)
+    if summary_text is None:
         print("ℹ️ Сводка не изменилась, пропускаем")
         return
+    
     try:
         entity = await client.get_entity(REPORT_CHANNEL)
-        await client.send_message(entity, summary, link_preview=False)
-        print(f"📢 Отправлена сводка в @{REPORT_CHANNEL}")
+        
+        # Генерируем картинку и отправляем вместе с текстом
+        try:
+            map_image = generate_map_image()
+            # Отправляем фото с текстом как подпись
+            await client.send_file(entity, map_image, caption=summary_text, parse_mode='markdown')
+            print(f"📢 Отправлена сводка с картой в @{REPORT_CHANNEL}")
+        except Exception as img_error:
+            print(f"❌ Ошибка генерации карты: {img_error}, отправляем только текст")
+            await client.send_message(entity, summary_text, link_preview=False)
+            print(f"📢 Отправлена текстовая сводка в @{REPORT_CHANNEL}")
+            
     except FloodWaitError as e:
         print(f"⏳ Flood wait {e.seconds} секунд")
         await asyncio.sleep(e.seconds)
@@ -602,11 +692,8 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
         cur_data = region_statuses.get(r, {})
         cur_status = cur_data.get("status")
 
-        # Для канала ДНР/ЛНР (Новороссия) - ЛЮБОЙ статус перебивает ЛЮБОЙ статус
         if source == "dpr":
-            # Всегда перезаписываем, без проверки приоритетов
             pass
-        # Для основного канала — соблюдаем приоритеты
         elif not is_history and status != "clear":
             if cur_status is not None and STATUS_PRIORITY.get(status, 99) > STATUS_PRIORITY.get(cur_status, 99):
                 if msg_id:
@@ -640,17 +727,15 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
 
 # ---------- ФОНОВАЯ ЗАДАЧА ДЛЯ УСТАРЕВАНИЯ СТАТУСОВ ----------
 def periodic_expire():
-    """Запускает проверку устаревших статусов каждые 10 минут и отправляет сводку если были изменения"""
     global telegram_client
     
     while True:
-        time.sleep(30)  # 30 секунд
+        time.sleep(600)  # 10 минут
         try:
             print("🔍 Проверка устаревших статусов...")
             changed = expire_old_statuses()
             if changed and telegram_client:
                 print("📢 Отправляем обновлённую сводку после устаревания...")
-                # Запускаем асинхронную отправку в синхронном контексте
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(send_report(telegram_client))
@@ -783,7 +868,6 @@ async def poll_messages():
     while True:
         await asyncio.sleep(30)
 
-        # Основной канал
         try:
             messages = await telegram_client.get_messages(CHANNEL_USERNAME, limit=50)
             if messages:
@@ -802,7 +886,6 @@ async def poll_messages():
         except Exception as e:
             print(f"❌ Ошибка основного канала: {e}")
 
-        # Канал ДНР/ЛНР (Новороссия)
         try:
             dpr_messages = await telegram_client.get_messages(DPR_CHANNEL, limit=50)
             if dpr_messages:
@@ -830,22 +913,18 @@ async def main():
 
     load_state()
 
-    # Применяем устаревание к загруженному состоянию
     expire_old_statuses()
 
     last_msg_id_main_loaded = last_msg_id_main
     last_msg_id_dpr_loaded = last_msg_id_dpr
 
-    print("📥 Загружаем историю (по одному сообщению, от старых к новым)...")
+    print("📥 Загружаем историю...")
 
-    # ========== ОСНОВНОЙ КАНАЛ ==========
     try:
         all_messages = await telegram_client.get_messages(CHANNEL_USERNAME, limit=200)
         if all_messages:
             sorted_messages = sorted(all_messages, key=lambda x: x.id)
-            
             last_msg_id_main = sorted_messages[-1].id
-            
             new_count = 0
             for msg in sorted_messages:
                 if msg.id <= last_msg_id_main_loaded:
@@ -856,19 +935,15 @@ async def main():
                     process_message(msg.message, msg.id, source="main", msg_date=msg.date, is_history=True)
                     new_count += 1
                     await asyncio.sleep(0.05)
-            
             print(f"✅ Обработано {len(sorted_messages)} сообщений из основного канала (новых: {new_count})")
     except Exception as e:
         print(f"❌ Ошибка основного канала: {e}")
 
-    # ========== КАНАЛ ДНР/ЛНР (НОВОРОССИЯ) ==========
     try:
         all_messages = await telegram_client.get_messages(DPR_CHANNEL, limit=200)
         if all_messages:
             sorted_messages = sorted(all_messages, key=lambda x: x.id)
-            
             last_msg_id_dpr = sorted_messages[-1].id
-            
             new_count = 0
             for msg in sorted_messages:
                 if msg.id <= last_msg_id_dpr_loaded:
@@ -879,12 +954,10 @@ async def main():
                     process_message(msg.message, msg.id, source="dpr", msg_date=msg.date, is_history=True)
                     new_count += 1
                     await asyncio.sleep(0.05)
-            
             print(f"✅ Обработано {len(sorted_messages)} сообщений из канала ДНР/ЛНР (новых: {new_count})")
     except Exception as e:
         print(f"❌ Ошибка канала ДНР/ЛНР: {e}")
 
-    # Ещё раз применяем устаревание после загрузки истории
     expire_old_statuses()
 
     print(f"📊 Статусов регионов: {len(region_statuses)}")
@@ -895,7 +968,6 @@ async def main():
     asyncio.create_task(poll_messages())
     print("🔄 Polling запущен (каждые 30 секунд)")
 
-    # Запускаем фоновые задачи
     threading.Thread(target=periodic_expire, daemon=True).start()
     threading.Thread(target=run_flask, daemon=True).start()
     threading.Thread(target=keep_alive, daemon=True).start()
@@ -910,14 +982,7 @@ async def main():
     ║   📢 Канал для сводок: @{REPORT_CHANNEL}
     ║   📊 Статусов активно: {len(region_statuses)}
     ║   📋 Записей в истории: {len(alert_history)}
-    ║   🔄 Обновление: 30 сек
     ║   ⏰ Устаревание статусов: {STATUS_EXPIRY_HOURS} часов
-    ║   📥 История: последовательная обработка
-    ║   🎨 Цвета: 🟤 ракетная тревога | 🔴 ракетная опасность | 🟠 тревога БПЛА | 🟡 опасность БПЛА
-    ║   🎯 Для канала Новороссии: ЛЮБОЙ статус перебивает ЛЮБОЙ статус
-    ║   📢 Сводка отправляется при:
-    ║      • Изменении статусов в каналах
-    ║      • Автоматическом устаревании статусов (каждые 10 мин)
     ╚═══════════════════════════════════════════════════╝
     """)
 
