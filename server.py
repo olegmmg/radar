@@ -377,10 +377,13 @@ def get_short_name(region):
     return REGION_SHORT_NAMES.get(region, region)
 
 def format_summary(regions):
-    missile_alert = []
-    missile_danger = []
-    drone_attack = []
-    drone_danger = []
+    # Потенциальная опасность
+    drone_danger = []      # опасность по БПЛА
+    
+    # Активная тревога
+    drone_attack = []      # тревога по БПЛА
+    missile_danger = []    # ракетная опасность
+    missile_alert = []     # ракетная тревога
 
     for region, data in regions.items():
         status = data.get("status")
@@ -389,32 +392,32 @@ def format_summary(regions):
         
         short_name = get_short_name(region)
         
-        if status == "missile_alert":
-            missile_alert.append(f"    • {short_name}")
-        elif status == "missile_danger":
-            missile_danger.append(f"    • {short_name}")
+        if status == "drone_danger":
+            drone_danger.append(f"    • {short_name}")
         elif status == "drone_attack":
             drone_attack.append(f"    • {short_name}")
-        elif status == "drone_danger":
-            drone_danger.append(f"    • {short_name}")
+        elif status == "missile_danger":
+            missile_danger.append(f"    • {short_name}")
+        elif status == "missile_alert":
+            missile_alert.append(f"    • {short_name}")
 
-    missile_alert.sort()
-    missile_danger.sort()
-    drone_attack.sort()
     drone_danger.sort()
+    drone_attack.sort()
+    missile_danger.sort()
+    missile_alert.sort()
 
     global last_summary
     current = {
-        "missile_alert": missile_alert,
-        "missile_danger": missile_danger,
+        "drone_danger": drone_danger,
         "drone_attack": drone_attack,
-        "drone_danger": drone_danger
+        "missile_danger": missile_danger,
+        "missile_alert": missile_alert
     }
     
-    if (last_summary.get("missile_alert") == missile_alert and
-        last_summary.get("missile_danger") == missile_danger and
+    if (last_summary.get("drone_danger") == drone_danger and
         last_summary.get("drone_attack") == drone_attack and
-        last_summary.get("drone_danger") == drone_danger):
+        last_summary.get("missile_danger") == missile_danger and
+        last_summary.get("missile_alert") == missile_alert):
         return None
 
     last_summary = current
@@ -425,17 +428,24 @@ def format_summary(regions):
 
     message = f"✈️ *Воздушная тревога* 🚀\n`{time_str}`\n\n"
     
-    message += "🟤 *РАКЕТНАЯ ТРЕВОГА*\n"
-    message += ("\n".join(missile_alert) if missile_alert else "    • Отсутствуют") + "\n\n"
+    # АКТИВНАЯ ТРЕВОГА (объединённый блок)
+    active_alerts = []
+    active_alerts.extend(missile_alert)      # 🟤 РАКЕТНАЯ ТРЕВОГА
+    active_alerts.extend(missile_danger)     # 🔴 РАКЕТНАЯ ОПАСНОСТЬ
+    active_alerts.extend(drone_attack)       # 🟠 ТРЕВОГА ПО БПЛА
     
-    message += "🔴 *РАКЕТНАЯ ОПАСНОСТЬ*\n"
-    message += ("\n".join(missile_danger) if missile_danger else "    • Отсутствуют") + "\n\n"
+    message += "🔴 *АКТИВНАЯ ТРЕВОГА*\n"
+    if active_alerts:
+        message += "\n".join(active_alerts) + "\n\n"
+    else:
+        message += "    • Отсутствует\n\n"
     
-    message += "🟠 *ТРЕВОГА ПО БПЛА*\n"
-    message += ("\n".join(drone_attack) if drone_attack else "    • Отсутствуют") + "\n\n"
-    
-    message += "🟡 *ОПАСНОСТЬ ПО БПЛА*\n"
-    message += ("\n".join(drone_danger) if drone_danger else "    • Отсутствуют") + "\n\n"
+    # ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ
+    message += "🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ*\n"
+    if drone_danger:
+        message += "\n".join(drone_danger) + "\n\n"
+    else:
+        message += "    • Отсутствует\n\n"
     
     message += "---\n📍 [Карта тревог](https://olegmmg.github.io/Radar/)"
     message += "\n📍 [TG Радар Россия](https://t.me/RadarMapRf)"
