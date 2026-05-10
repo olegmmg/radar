@@ -4,7 +4,11 @@ from flask import Flask, jsonify, request
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
-from PIL import Image, ImageDraw, ImageFont
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from PIL import Image
 
 app = Flask(__name__)
 
@@ -294,86 +298,59 @@ PERSIST_FILE = "/tmp/radar_state.json"
 # Глобальная переменная для клиента Telegram
 telegram_client = None
 
-def generate_map_image():
-    """Генерирует изображение карты с отметками тревог"""
-    
-    width = 800
-    height = 600
-    
-    img = Image.new('RGB', (width, height), color='#1a1a2e')
-    draw = ImageDraw.Draw(img)
-    
+# Инициализация браузера для скриншотов
+driver = None
+
+def get_driver():
+    global driver
+    if driver is None:
+        chrome_options = Options()
+        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--window-size=1200,800')
+        chrome_options.add_argument('--hide-scrollbars')
+        chrome_options.add_argument('--disable-logging')
+        chrome_options.add_argument('--log-level=3')
+        
+        try:
+            driver = webdriver.Chrome(
+                service=Service(ChromeDriverManager().install()),
+                options=chrome_options
+            )
+            print("✅ Chrome driver инициализирован")
+        except Exception as e:
+            print(f"❌ Ошибка инициализации Chrome: {e}")
+            driver = None
+    return driver
+
+def capture_map_screenshot():
+    """Делает скриншот карты с сайта olegmmg.github.io/Radar"""
     try:
-        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
-        font_header = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
-        font_text = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
-    except:
-        font_title = ImageFont.load_default()
-        font_header = ImageFont.load_default()
-        font_text = ImageFont.load_default()
-    
-    # Заголовок
-    draw.text((width//2, 30), "🚨 КАРТА ВОЗДУШНЫХ ТРЕВОГ 🚨", fill="white", anchor="mt", font=font_title)
-    
-    # Разделяем регионы
-    active_regions = []
-    potential_regions = []
-    
-    for region, data in region_statuses.items():
-        status = data.get("status")
-        if not status or status == "clear":
-            continue
+        driver_instance = get_driver()
+        if not driver_instance:
+            return None
         
-        short_name = get_short_name(region)
+        # Ждем загрузки страницы
+        driver_instance.get("https://olegmmg.github.io/Radar/")
+        time.sleep(5)  # Ждем загрузки карты
         
-        if status in ["missile_alert", "missile_danger", "drone_attack"]:
-            active_regions.append(f"🔴 {short_name}")
-        elif status == "drone_danger":
-            potential_regions.append(f"🟡 {short_name}")
-    
-    # Активная тревога
-    y = 80
-    draw.rectangle([30, y-5, width-30, y+25], fill="#330000", outline="#ff4444")
-    draw.text((50, y), "АКТИВНАЯ ТРЕВОГА", fill="#ff4444", font=font_header)
-    
-    y += 40
-    if active_regions:
-        for i, region in enumerate(active_regions[:18]):
-            draw.text((50, y + i*22), region, fill="#ff8888", font=font_text)
-        if len(active_regions) > 18:
-            draw.text((50, y + 18*22), f"...и еще {len(active_regions)-18} регионов", fill="#888888", font=font_text)
-        y += max(22 * min(len(active_regions), 18), 22) + 20
-    else:
-        draw.text((50, y), "Отсутствует", fill="#888888", font=font_text)
-        y += 40
-    
-    # Потенциальная опасность
-    draw.rectangle([30, y-5, width-30, y+25], fill="#331c00", outline="#ffaa44")
-    draw.text((50, y), "ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ", fill="#ffaa44", font=font_header)
-    
-    y += 40
-    if potential_regions:
-        for i, region in enumerate(potential_regions[:14]):
-            draw.text((50, y + i*22), region, fill="#ffcc88", font=font_text)
-        if len(potential_regions) > 14:
-            draw.text((50, y + 14*22), f"...и еще {len(potential_regions)-14} регионов", fill="#888888", font=font_text)
-    else:
-        draw.text((50, y), "Отсутствует", fill="#888888", font=font_text)
-    
-    # Нижняя часть
-    now = datetime.now(timezone.utc) + timedelta(hours=3)
-    time_str = now.strftime("%H:%M | %d.%m.%Y")
-    draw.text((width//2, height - 30), f"Обновлено: {time_str}", fill="#666666", anchor="mt", font=font_text)
-    draw.text((width//2, height - 10), "olegmmg.github.io/Radar", fill="#4444ff", anchor="mt", font=font_text)
-    
-    img_buffer = io.BytesIO()
-    img.save(img_buffer, format='PNG')
-    img_buffer.seek(0)
-    
-    return img_buffer
+        # Делаем скриншот
+        screenshot = driver_instance.get_screenshot_as_png()
+        
+        # Конвертируем в BytesIO
+        img_buffer = io.BytesIO(screenshot)
+        img_buffer.seek(0)
+        
+        print("📸 Скриншот карты сделан")
+        return img_buffer
+        
+    except Exception as e:
+        print(f"❌ Ошибка создания скриншота: {e}")
+        return None
 
 def expire_old_statuses():
-    """Устанавливает статус clear для регионов, у которых последнее обновление старше STATUS_EXPIRY_HOURS часов"""
     global region_statuses, last_summary
     now = datetime.now(timezone.utc)
     expiry_time = now - timedelta(hours=STATUS_EXPIRY_HOURS)
@@ -455,13 +432,10 @@ def get_short_name(region):
     return REGION_SHORT_NAMES.get(region, region)
 
 def format_summary(regions):
-    # Потенциальная опасность
-    drone_danger = []      # опасность по БПЛА
-    
-    # Активная тревога
-    drone_attack = []      # тревога по БПЛА
-    missile_danger = []    # ракетная опасность
-    missile_alert = []     # ракетная тревога
+    drone_danger = []
+    drone_attack = []
+    missile_danger = []
+    missile_alert = []
 
     for region, data in regions.items():
         status = data.get("status")
@@ -506,7 +480,6 @@ def format_summary(regions):
 
     message = f"✈️ *Воздушная тревога* 🚀\n`{time_str}`\n\n"
     
-    # АКТИВНАЯ ТРЕВОГА
     active_alerts = []
     active_alerts.extend(missile_alert)
     active_alerts.extend(missile_danger)
@@ -518,7 +491,6 @@ def format_summary(regions):
     else:
         message += "    • Отсутствует\n\n"
     
-    # ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ
     message += "🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ*\n"
     if drone_danger:
         message += "\n".join(drone_danger) + "\n\n"
@@ -543,14 +515,21 @@ async def send_report(client):
     try:
         entity = await client.get_entity(REPORT_CHANNEL)
         
-        # Генерируем картинку и отправляем вместе с текстом
-        try:
-            map_image = generate_map_image()
-            # Отправляем фото с текстом как подпись
-            await client.send_file(entity, map_image, caption=summary_text, parse_mode='markdown')
+        # Пытаемся сделать скриншот карты
+        map_image = capture_map_screenshot()
+        
+        if map_image:
+            # Отправляем как фото (не как файл)
+            await client.send_file(
+                entity, 
+                map_image, 
+                caption=summary_text, 
+                parse_mode='markdown',
+                force_document=False  # Важно! Отправляем как фото, а не как файл
+            )
             print(f"📢 Отправлена сводка с картой в @{REPORT_CHANNEL}")
-        except Exception as img_error:
-            print(f"❌ Ошибка генерации карты: {img_error}, отправляем только текст")
+        else:
+            # Если скриншот не удался, отправляем только текст
             await client.send_message(entity, summary_text, link_preview=False)
             print(f"📢 Отправлена текстовая сводка в @{REPORT_CHANNEL}")
             
