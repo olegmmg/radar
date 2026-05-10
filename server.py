@@ -290,6 +290,9 @@ last_msg_id_dpr = 0
 
 PERSIST_FILE = "/tmp/radar_state.json"
 
+# Глобальная переменная для клиента Telegram
+telegram_client = None
+
 def expire_old_statuses():
     """Устанавливает статус clear для регионов, у которых последнее обновление старше STATUS_EXPIRY_HOURS часов"""
     global region_statuses, last_summary
@@ -441,9 +444,11 @@ def format_summary(regions):
 
 async def send_report(client):
     if not region_statuses:
+        print("⚠️ Нет данных о регионах, сводка не отправлена")
         return
     summary = format_summary(region_statuses)
     if summary is None:
+        print("ℹ️ Сводка не изменилась, пропускаем")
         return
     try:
         entity = await client.get_entity(REPORT_CHANNEL)
@@ -587,9 +592,11 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
         cur_data = region_statuses.get(r, {})
         cur_status = cur_data.get("status")
 
-        # Для канала ДНР/ЛНР — всегда перезаписываем
+        # Для канала ДНР/ЛНР (Новороссия) - ЛЮБОЙ статус перебивает ЛЮБОЙ статус
         if source == "dpr":
+            # Всегда перезаписываем, без проверки приоритетов
             pass
+        # Для основного канала — соблюдаем приоритеты
         elif not is_history and status != "clear":
             if cur_status is not None and STATUS_PRIORITY.get(status, 99) > STATUS_PRIORITY.get(cur_status, 99):
                 if msg_id:
@@ -622,19 +629,24 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
     return updated
 
 # ---------- ФОНОВАЯ ЗАДАЧА ДЛЯ УСТАРЕВАНИЯ СТАТУСОВ ----------
-def periodic_expire(client):
+def periodic_expire():
     """Запускает проверку устаревших статусов каждые 10 минут и отправляет сводку если были изменения"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    global telegram_client
     
     while True:
-        time.sleep(600)  # 10 минут
+        time.sleep(30)  # 30 секунд
         try:
             print("🔍 Проверка устаревших статусов...")
             changed = expire_old_statuses()
-            if changed:
+            if changed and telegram_client:
                 print("📢 Отправляем обновлённую сводку после устаревания...")
-                loop.run_until_complete(send_report(client))
+                # Запускаем асинхронную отправку в синхронном контексте
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(send_report(telegram_client))
+                loop.close()
+            elif changed and not telegram_client:
+                print("⚠️ Клиент Telegram не инициализирован, сводка не отправлена")
         except Exception as e:
             print(f"❌ Ошибка при устаревании статусов: {e}")
 
@@ -671,9 +683,236 @@ def get_recent_alerts():
     filtered = list(reversed(alert_history[-100:]))[:50]
     return jsonify({
         "alerts": filtered,
-        "total": len(alert_history)
+        "total": len(alert_history),
+        "last_updated": datetime.now(timezone.utc).isoformat()
     })
 
-if __name__ == "__main__":
+@app.route("/")
+def index():
+    return jsonify({
+        "status": "ok",
+        "endpoints": ["/api/statuses", "/api/recent_alerts"],
+        "regions_count": len(region_statuses),
+        "last_update": datetime.now(timezone.utc).isoformat()
+    })
+
+# ---------- GITHUB ----------
+def push_to_github():
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return
+
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/data/statuses.json"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+
+    export_data = {
+        "regions": {},
+        "last_updated": datetime.now(timezone.utc).isoformat()
+    }
+
+    for r, d in region_statuses.items():
+        export_data["regions"][r] = {
+            "status": d["status"],
+            "last_update": d["last_update"],
+            "message": d.get("message", "")
+        }
+
+    content = json.dumps(export_data, ensure_ascii=False, indent=2)
+    b64 = base64.b64encode(content.encode()).decode()
+
+    try:
+        resp = requests.get(url, headers=headers)
+        sha = resp.json().get("sha") if resp.status_code == 200 else None
+    except Exception:
+        sha = None
+
+    body = {"message": "update", "content": b64, "branch": "main"}
+    if sha:
+        body["sha"] = sha
+
+    try:
+        requests.put(url, headers=headers, json=body)
+        print("📤 Данные отправлены в GitHub")
+    except Exception as e:
+        print(f"❌ Ошибка отправки в GitHub: {e}")
+
+# ---------- ФОНОВЫЕ ЗАДАЧИ ----------
+def periodic_push():
+    while True:
+        time.sleep(60)
+        if region_statuses:
+            push_to_github()
+            save_state()
+
+def keep_alive():
+    port = int(os.environ.get("PORT", 5000))
+    while True:
+        time.sleep(240)
+        try:
+            requests.get(f"http://localhost:{port}/api/statuses", timeout=10)
+            print("💓 Self-ping OK")
+        except Exception as e:
+            print(f"💔 Self-ping failed: {e}")
+
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
+# ---------- TELEGRAM ----------
+async def poll_messages():
+    global last_msg_id_main, last_msg_id_dpr, telegram_client
+
+    try:
+        main_channel = await telegram_client.get_entity(CHANNEL_USERNAME)
+        dpr_channel = await telegram_client.get_entity(DPR_CHANNEL)
+        print(f"✅ Основной канал: {main_channel.title}")
+        print(f"✅ Канал ДНР/ЛНР: {dpr_channel.title}")
+    except Exception as e:
+        print(f"❌ Ошибка получения каналов: {e}")
+        return
+
+    while True:
+        await asyncio.sleep(30)
+
+        # Основной канал
+        try:
+            messages = await telegram_client.get_messages(CHANNEL_USERNAME, limit=50)
+            if messages:
+                updated = False
+                for msg in reversed(messages):
+                    if msg.id <= last_msg_id_main:
+                        continue
+                    last_msg_id_main = msg.id
+                    if msg.message:
+                        preview = msg.message[:80].replace('\n', ' ')
+                        print(f"📩 [main] ID:{msg.id} | {preview}...")
+                        if process_message(msg.message, msg.id, source="main", msg_date=msg.date):
+                            updated = True
+                if updated:
+                    await send_report(telegram_client)
+        except Exception as e:
+            print(f"❌ Ошибка основного канала: {e}")
+
+        # Канал ДНР/ЛНР (Новороссия)
+        try:
+            dpr_messages = await telegram_client.get_messages(DPR_CHANNEL, limit=50)
+            if dpr_messages:
+                updated = False
+                for msg in reversed(dpr_messages):
+                    if msg.id <= last_msg_id_dpr:
+                        continue
+                    last_msg_id_dpr = msg.id
+                    if msg.message:
+                        preview = msg.message[:80].replace('\n', ' ')
+                        print(f"📩 [DPR/Новороссия] ID:{msg.id} | {preview}...")
+                        if process_message(msg.message, msg.id, source="dpr", msg_date=msg.date):
+                            updated = True
+                if updated:
+                    await send_report(telegram_client)
+        except Exception as e:
+            print(f"❌ Ошибка канала ДНР/ЛНР: {e}")
+
+async def main():
+    global telegram_client, last_msg_id_main, last_msg_id_dpr, region_statuses
+    
+    telegram_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+    await telegram_client.start()
+    print("✅ Telegram клиент запущен")
+
     load_state()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+    # Применяем устаревание к загруженному состоянию
+    expire_old_statuses()
+
+    last_msg_id_main_loaded = last_msg_id_main
+    last_msg_id_dpr_loaded = last_msg_id_dpr
+
+    print("📥 Загружаем историю (по одному сообщению, от старых к новым)...")
+
+    # ========== ОСНОВНОЙ КАНАЛ ==========
+    try:
+        all_messages = await telegram_client.get_messages(CHANNEL_USERNAME, limit=200)
+        if all_messages:
+            sorted_messages = sorted(all_messages, key=lambda x: x.id)
+            
+            last_msg_id_main = sorted_messages[-1].id
+            
+            new_count = 0
+            for msg in sorted_messages:
+                if msg.id <= last_msg_id_main_loaded:
+                    continue
+                if msg.message:
+                    preview = msg.message[:80].replace('\n', ' ')
+                    print(f"📥 [main] ID:{msg.id} | {preview}...")
+                    process_message(msg.message, msg.id, source="main", msg_date=msg.date, is_history=True)
+                    new_count += 1
+                    await asyncio.sleep(0.05)
+            
+            print(f"✅ Обработано {len(sorted_messages)} сообщений из основного канала (новых: {new_count})")
+    except Exception as e:
+        print(f"❌ Ошибка основного канала: {e}")
+
+    # ========== КАНАЛ ДНР/ЛНР (НОВОРОССИЯ) ==========
+    try:
+        all_messages = await telegram_client.get_messages(DPR_CHANNEL, limit=200)
+        if all_messages:
+            sorted_messages = sorted(all_messages, key=lambda x: x.id)
+            
+            last_msg_id_dpr = sorted_messages[-1].id
+            
+            new_count = 0
+            for msg in sorted_messages:
+                if msg.id <= last_msg_id_dpr_loaded:
+                    continue
+                if msg.message:
+                    preview = msg.message[:80].replace('\n', ' ')
+                    print(f"📥 [DPR/Новороссия] ID:{msg.id} | {preview}...")
+                    process_message(msg.message, msg.id, source="dpr", msg_date=msg.date, is_history=True)
+                    new_count += 1
+                    await asyncio.sleep(0.05)
+            
+            print(f"✅ Обработано {len(sorted_messages)} сообщений из канала ДНР/ЛНР (новых: {new_count})")
+    except Exception as e:
+        print(f"❌ Ошибка канала ДНР/ЛНР: {e}")
+
+    # Ещё раз применяем устаревание после загрузки истории
+    expire_old_statuses()
+
+    print(f"📊 Статусов регионов: {len(region_statuses)}")
+    print(f"📋 Записей в истории: {len(alert_history)}")
+
+    await send_report(telegram_client)
+
+    asyncio.create_task(poll_messages())
+    print("🔄 Polling запущен (каждые 30 секунд)")
+
+    # Запускаем фоновые задачи
+    threading.Thread(target=periodic_expire, daemon=True).start()
+    threading.Thread(target=run_flask, daemon=True).start()
+    threading.Thread(target=keep_alive, daemon=True).start()
+    threading.Thread(target=periodic_push, daemon=True).start()
+
+    print(f"""
+    ╔═══════════════════════════════════════════════════╗
+    ║              ✅ СЕРВЕР ЗАПУЩЕН                    ║
+    ╠═══════════════════════════════════════════════════╣
+    ║   📡 Основной канал: {CHANNEL_USERNAME}
+    ║   📡 Канал Новороссии: {DPR_CHANNEL}
+    ║   📢 Канал для сводок: @{REPORT_CHANNEL}
+    ║   📊 Статусов активно: {len(region_statuses)}
+    ║   📋 Записей в истории: {len(alert_history)}
+    ║   🔄 Обновление: 30 сек
+    ║   ⏰ Устаревание статусов: {STATUS_EXPIRY_HOURS} часов
+    ║   📥 История: последовательная обработка
+    ║   🎨 Цвета: 🟤 ракетная тревога | 🔴 ракетная опасность | 🟠 тревога БПЛА | 🟡 опасность БПЛА
+    ║   🎯 Для канала Новороссии: ЛЮБОЙ статус перебивает ЛЮБОЙ статус
+    ║   📢 Сводка отправляется при:
+    ║      • Изменении статусов в каналах
+    ║      • Автоматическом устаревании статусов (каждые 10 мин)
+    ╚═══════════════════════════════════════════════════╝
+    """)
+
+    while True:
+        await asyncio.sleep(1)
+
+if __name__ == "__main__":
+    asyncio.run(main())
