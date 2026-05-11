@@ -1,14 +1,9 @@
-import os, re, json, base64, threading, time, requests, asyncio, io
+import os, re, json, base64, threading, time, requests, asyncio
 from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify, request
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from PIL import Image
 
 app = Flask(__name__)
 
@@ -298,59 +293,8 @@ PERSIST_FILE = "/tmp/radar_state.json"
 # Глобальная переменная для клиента Telegram
 telegram_client = None
 
-# Инициализация браузера для скриншотов
-driver = None
-
-def get_driver():
-    global driver
-    if driver is None:
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1200,800')
-        chrome_options.add_argument('--hide-scrollbars')
-        chrome_options.add_argument('--disable-logging')
-        chrome_options.add_argument('--log-level=3')
-        
-        try:
-            driver = webdriver.Chrome(
-                service=Service(ChromeDriverManager().install()),
-                options=chrome_options
-            )
-            print("✅ Chrome driver инициализирован")
-        except Exception as e:
-            print(f"❌ Ошибка инициализации Chrome: {e}")
-            driver = None
-    return driver
-
-def capture_map_screenshot():
-    """Делает скриншот карты с сайта olegmmg.github.io/Radar"""
-    try:
-        driver_instance = get_driver()
-        if not driver_instance:
-            return None
-        
-        # Ждем загрузки страницы
-        driver_instance.get("https://olegmmg.github.io/Radar/")
-        time.sleep(5)  # Ждем загрузки карты
-        
-        # Делаем скриншот
-        screenshot = driver_instance.get_screenshot_as_png()
-        
-        # Конвертируем в BytesIO
-        img_buffer = io.BytesIO(screenshot)
-        img_buffer.seek(0)
-        
-        print("📸 Скриншот карты сделан")
-        return img_buffer
-        
-    except Exception as e:
-        print(f"❌ Ошибка создания скриншота: {e}")
-        return None
-
 def expire_old_statuses():
+    """Устанавливает статус clear для регионов, у которых последнее обновление старше STATUS_EXPIRY_HOURS часов"""
     global region_statuses, last_summary
     now = datetime.now(timezone.utc)
     expiry_time = now - timedelta(hours=STATUS_EXPIRY_HOURS)
@@ -382,6 +326,7 @@ def expire_old_statuses():
     
     if expired_count > 0:
         print(f"✅ Устарело {expired_count} регионов (автоматический отбой)")
+        # Сбрасываем last_summary, чтобы при следующей проверке отправилась сводка
         last_summary = {"drone_danger": [], "drone_attack": [], "missile_danger": [], "missile_alert": [], "timestamp": None}
         save_state()
     
@@ -432,10 +377,13 @@ def get_short_name(region):
     return REGION_SHORT_NAMES.get(region, region)
 
 def format_summary(regions):
-    drone_danger = []
-    drone_attack = []
-    missile_danger = []
-    missile_alert = []
+    # Потенциальная опасность
+    drone_danger = []      # опасность по БПЛА
+    
+    # Активная тревога
+    drone_attack = []      # тревога по БПЛА
+    missile_danger = []    # ракетная опасность
+    missile_alert = []     # ракетная тревога
 
     for region, data in regions.items():
         status = data.get("status")
@@ -480,10 +428,11 @@ def format_summary(regions):
 
     message = f"✈️ *Воздушная тревога* 🚀\n`{time_str}`\n\n"
     
+    # АКТИВНАЯ ТРЕВОГА (объединённый блок)
     active_alerts = []
-    active_alerts.extend(missile_alert)
-    active_alerts.extend(missile_danger)
-    active_alerts.extend(drone_attack)
+    active_alerts.extend(missile_alert)      # 🟤 РАКЕТНАЯ ТРЕВОГА
+    active_alerts.extend(missile_danger)     # 🔴 РАКЕТНАЯ ОПАСНОСТЬ
+    active_alerts.extend(drone_attack)       # 🟠 ТРЕВОГА ПО БПЛА
     
     message += "🔴 *АКТИВНАЯ ТРЕВОГА*\n"
     if active_alerts:
@@ -491,6 +440,7 @@ def format_summary(regions):
     else:
         message += "    • Отсутствует\n\n"
     
+    # ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ
     message += "🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ*\n"
     if drone_danger:
         message += "\n".join(drone_danger) + "\n\n"
@@ -506,33 +456,14 @@ async def send_report(client):
     if not region_statuses:
         print("⚠️ Нет данных о регионах, сводка не отправлена")
         return
-    
-    summary_text = format_summary(region_statuses)
-    if summary_text is None:
+    summary = format_summary(region_statuses)
+    if summary is None:
         print("ℹ️ Сводка не изменилась, пропускаем")
         return
-    
     try:
         entity = await client.get_entity(REPORT_CHANNEL)
-        
-        # Пытаемся сделать скриншот карты
-        map_image = capture_map_screenshot()
-        
-        if map_image:
-            # Отправляем как фото (не как файл)
-            await client.send_file(
-                entity, 
-                map_image, 
-                caption=summary_text, 
-                parse_mode='markdown',
-                force_document=False  # Важно! Отправляем как фото, а не как файл
-            )
-            print(f"📢 Отправлена сводка с картой в @{REPORT_CHANNEL}")
-        else:
-            # Если скриншот не удался, отправляем только текст
-            await client.send_message(entity, summary_text, link_preview=False)
-            print(f"📢 Отправлена текстовая сводка в @{REPORT_CHANNEL}")
-            
+        await client.send_message(entity, summary, link_preview=False)
+        print(f"📢 Отправлена сводка в @{REPORT_CHANNEL}")
     except FloodWaitError as e:
         print(f"⏳ Flood wait {e.seconds} секунд")
         await asyncio.sleep(e.seconds)
@@ -571,15 +502,18 @@ def is_superseded_by_later(text):
     return bool(re.search(r"с \d{1,2}:\d{2} до \d{1,2}:\d{2}.*уничтожено", text, re.IGNORECASE))
 
 def extract_regions(text):
+    """Извлекает регионы из текста, включая перечисления через запятую"""
     normalized = ' '.join(text.split())
     found = set()
 
+    # 1. Прямое сопоставление по алиасам
     for alias, norm in REGION_ALIASES.items():
         if alias.lower() in normalized.lower():
             found.add(norm)
 
     text_lower = normalized.lower()
 
+    # 2. Специальные ключевые слова для ДНР/ЛНР
     if re.search(r'\b(днр|dnr|донецк|горловка|макеевка|енакиево)\b', text_lower):
         found.add("Донецкая Народная Республика")
     if re.search(r'\b(лнр|lnr|луганск|алчевск|брянка)\b', text_lower):
@@ -592,6 +526,34 @@ def extract_regions(text):
     if re.search(r'херсон|kherson', text_lower):
         found.add("Херсонская область")
 
+    # 3. НОВОЕ: обработка перечислений регионов через запятую и "и"
+    # Пример: "Брянской области, Курской области, Белгородской области"
+    # Ищем паттерны: название_области[, название_области]*
+    region_pattern = r'([А-Яа-яёЁ\s-]+?(?:область|край|республика|ао|округ|АО|Республика|Край))'
+    
+    # Ищем все совпадения с названиями регионов
+    matches = re.findall(region_pattern, normalized, re.IGNORECASE)
+    for match in matches:
+        match_clean = match.strip().lower()
+        # Проверяем, есть ли такое название в алиасах
+        for alias, norm in REGION_ALIASES.items():
+            if alias.lower() == match_clean or match_clean in alias.lower():
+                found.add(norm)
+                break
+            # Также проверяем частичное совпадение (например, "Брянская" -> "Брянская область")
+            if match_clean in alias.lower() and len(match_clean) > 5:
+                found.add(norm)
+                break
+
+    # 4. Дополнительная проверка на "Приграничные районы X области"
+    border_pattern = r'приграничные районы\s+([А-Яа-яёЁ\s-]+?(?:область|край))'
+    border_matches = re.findall(border_pattern, text_lower, re.IGNORECASE)
+    for match in border_matches:
+        for alias, norm in REGION_ALIASES.items():
+            if match in alias.lower():
+                found.add(norm)
+                break
+
     return list(found)
 
 def detect_status(text):
@@ -599,7 +561,7 @@ def detect_status(text):
 
     if any(w in t for w in [
         "отбой", "отбой опасности", "отбой по бпла", "отбой ракетной опасности",
-        "отбой авиационной", "отбой фиксации", "отбой по пкр", "отбой по бэк"
+        "отбой авиационной", "отбой фиксации", "отбой по пкр", "отбой по бэк", "все спокойно"
     ]):
         return "clear"
 
@@ -626,7 +588,7 @@ def detect_status(text):
 
     if any(w in t for w in [
         "опасность по бпла", "угроза атаки", "внимание по бпла", "меры безопасности",
-        "опасность сохраняется", "повторно"
+        "опасность сохраняется", "повторно", "возможно появление", "fpv", "единичных бпла"
     ]):
         return "drone_danger"
 
@@ -671,8 +633,11 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
         cur_data = region_statuses.get(r, {})
         cur_status = cur_data.get("status")
 
+        # Для канала ДНР/ЛНР (Новороссия) - ЛЮБОЙ статус перебивает ЛЮБОЙ статус
         if source == "dpr":
+            # Всегда перезаписываем, без проверки приоритетов
             pass
+        # Для основного канала — соблюдаем приоритеты
         elif not is_history and status != "clear":
             if cur_status is not None and STATUS_PRIORITY.get(status, 99) > STATUS_PRIORITY.get(cur_status, 99):
                 if msg_id:
@@ -706,6 +671,7 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
 
 # ---------- ФОНОВАЯ ЗАДАЧА ДЛЯ УСТАРЕВАНИЯ СТАТУСОВ ----------
 def periodic_expire():
+    """Запускает проверку устаревших статусов каждые 10 минут и отправляет сводку если были изменения"""
     global telegram_client
     
     while True:
@@ -715,6 +681,7 @@ def periodic_expire():
             changed = expire_old_statuses()
             if changed and telegram_client:
                 print("📢 Отправляем обновлённую сводку после устаревания...")
+                # Запускаем асинхронную отправку в синхронном контексте
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(send_report(telegram_client))
@@ -847,6 +814,7 @@ async def poll_messages():
     while True:
         await asyncio.sleep(30)
 
+        # Основной канал
         try:
             messages = await telegram_client.get_messages(CHANNEL_USERNAME, limit=50)
             if messages:
@@ -865,6 +833,7 @@ async def poll_messages():
         except Exception as e:
             print(f"❌ Ошибка основного канала: {e}")
 
+        # Канал ДНР/ЛНР (Новороссия)
         try:
             dpr_messages = await telegram_client.get_messages(DPR_CHANNEL, limit=50)
             if dpr_messages:
@@ -892,18 +861,22 @@ async def main():
 
     load_state()
 
+    # Применяем устаревание к загруженному состоянию
     expire_old_statuses()
 
     last_msg_id_main_loaded = last_msg_id_main
     last_msg_id_dpr_loaded = last_msg_id_dpr
 
-    print("📥 Загружаем историю...")
+    print("📥 Загружаем историю (по одному сообщению, от старых к новым)...")
 
+    # ========== ОСНОВНОЙ КАНАЛ ==========
     try:
         all_messages = await telegram_client.get_messages(CHANNEL_USERNAME, limit=200)
         if all_messages:
             sorted_messages = sorted(all_messages, key=lambda x: x.id)
+            
             last_msg_id_main = sorted_messages[-1].id
+            
             new_count = 0
             for msg in sorted_messages:
                 if msg.id <= last_msg_id_main_loaded:
@@ -914,15 +887,19 @@ async def main():
                     process_message(msg.message, msg.id, source="main", msg_date=msg.date, is_history=True)
                     new_count += 1
                     await asyncio.sleep(0.05)
+            
             print(f"✅ Обработано {len(sorted_messages)} сообщений из основного канала (новых: {new_count})")
     except Exception as e:
         print(f"❌ Ошибка основного канала: {e}")
 
+    # ========== КАНАЛ ДНР/ЛНР (НОВОРОССИЯ) ==========
     try:
         all_messages = await telegram_client.get_messages(DPR_CHANNEL, limit=200)
         if all_messages:
             sorted_messages = sorted(all_messages, key=lambda x: x.id)
+            
             last_msg_id_dpr = sorted_messages[-1].id
+            
             new_count = 0
             for msg in sorted_messages:
                 if msg.id <= last_msg_id_dpr_loaded:
@@ -933,10 +910,12 @@ async def main():
                     process_message(msg.message, msg.id, source="dpr", msg_date=msg.date, is_history=True)
                     new_count += 1
                     await asyncio.sleep(0.05)
+            
             print(f"✅ Обработано {len(sorted_messages)} сообщений из канала ДНР/ЛНР (новых: {new_count})")
     except Exception as e:
         print(f"❌ Ошибка канала ДНР/ЛНР: {e}")
 
+    # Ещё раз применяем устаревание после загрузки истории
     expire_old_statuses()
 
     print(f"📊 Статусов регионов: {len(region_statuses)}")
@@ -947,6 +926,7 @@ async def main():
     asyncio.create_task(poll_messages())
     print("🔄 Polling запущен (каждые 30 секунд)")
 
+    # Запускаем фоновые задачи
     threading.Thread(target=periodic_expire, daemon=True).start()
     threading.Thread(target=run_flask, daemon=True).start()
     threading.Thread(target=keep_alive, daemon=True).start()
