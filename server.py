@@ -733,42 +733,46 @@ def index():
 
 # ---------- GITHUB ----------
 def push_to_github():
-    if not GITHUB_TOKEN or not GITHUB_REPO:
-        return
-
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/data/statuses.json"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-
-    export_data = {
-        "regions": {},
-        "last_updated": datetime.now(timezone.utc).isoformat()
-    }
-
-    for r, d in region_statuses.items():
-        export_data["regions"][r] = {
-            "status": d["status"],
-            "last_update": d["last_update"],
-            "message": d.get("message", "")
-        }
-
-    content = json.dumps(export_data, ensure_ascii=False, indent=2)
-    b64 = base64.b64encode(content.encode()).decode()
-
-    try:
-        resp = requests.get(url, headers=headers)
-        sha = resp.json().get("sha") if resp.status_code == 200 else None
-    except Exception:
-        sha = None
-
-    body = {"message": "update", "content": b64, "branch": "main"}
-    if sha:
-        body["sha"] = sha
-
-    try:
-        requests.put(url, headers=headers, json=body)
-        print("📤 Данные отправлены в GitHub")
-    except Exception as e:
-        print(f"❌ Ошибка отправки в GitHub: {e}")
+    # Пустышка - функция отключена
+    # if not GITHUB_TOKEN or not GITHUB_REPO:
+    #     return
+    #
+    # url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/data/statuses.json"
+    # headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    #
+    # export_data = {
+    #     "regions": {},
+    #     "last_updated": datetime.now(timezone.utc).isoformat()
+    # }
+    #
+    # for r, d in region_statuses.items():
+    #     export_data["regions"][r] = {
+    #         "status": d["status"],
+    #         "last_update": d["last_update"],
+    #         "message": d.get("message", "")
+    #     }
+    #
+    # content = json.dumps(export_data, ensure_ascii=False, indent=2)
+    # b64 = base64.b64encode(content.encode()).decode()
+    #
+    # try:
+    #     resp = requests.get(url, headers=headers)
+    #     sha = resp.json().get("sha") if resp.status_code == 200 else None
+    # except Exception:
+    #     sha = None
+    #
+    # body = {"message": "update", "content": b64, "branch": "main"}
+    # if sha:
+    #     body["sha"] = sha
+    #
+    # try:
+    #     requests.put(url, headers=headers, json=body)
+    #     print("📤 Данные отправлены в GitHub")
+    # except Exception as e:
+    #     print(f"❌ Ошибка отправки в GitHub: {e}")
+    
+    # Функция отключена
+    pass
 
 # ---------- ФОНОВЫЕ ЗАДАЧИ ----------
 def periodic_push():
