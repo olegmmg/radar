@@ -326,7 +326,6 @@ def expire_old_statuses():
     
     if expired_count > 0:
         print(f"✅ Устарело {expired_count} регионов (автоматический отбой)")
-        # Сбрасываем last_summary, чтобы при следующей проверке отправилась сводка
         last_summary = {"drone_danger": [], "drone_attack": [], "missile_danger": [], "missile_alert": [], "timestamp": None}
         save_state()
     
@@ -377,13 +376,10 @@ def get_short_name(region):
     return REGION_SHORT_NAMES.get(region, region)
 
 def format_summary(regions):
-    # Потенциальная опасность
-    drone_danger = []      # опасность по БПЛА
-    
-    # Активная тревога
-    drone_attack = []      # тревога по БПЛА
-    missile_danger = []    # ракетная опасность
-    missile_alert = []     # ракетная тревога
+    drone_danger = []
+    drone_attack = []
+    missile_danger = []
+    missile_alert = []
 
     for region, data in regions.items():
         status = data.get("status")
@@ -428,11 +424,10 @@ def format_summary(regions):
 
     message = f"✈️ *Воздушная тревога* 🚀\n`{time_str}`\n\n"
     
-    # АКТИВНАЯ ТРЕВОГА (объединённый блок)
     active_alerts = []
-    active_alerts.extend(missile_alert)      # 🟤 РАКЕТНАЯ ТРЕВОГА
-    active_alerts.extend(missile_danger)     # 🔴 РАКЕТНАЯ ОПАСНОСТЬ
-    active_alerts.extend(drone_attack)       # 🟠 ТРЕВОГА ПО БПЛА
+    active_alerts.extend(missile_alert)
+    active_alerts.extend(missile_danger)
+    active_alerts.extend(drone_attack)
     
     message += "🔴 *АКТИВНАЯ ТРЕВОГА*\n"
     if active_alerts:
@@ -440,7 +435,6 @@ def format_summary(regions):
     else:
         message += "    • Отсутствует\n\n"
     
-    # ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ
     message += "🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ*\n"
     if drone_danger:
         message += "\n".join(drone_danger) + "\n\n"
@@ -502,74 +496,56 @@ def is_superseded_by_later(text):
     return bool(re.search(r"с \d{1,2}:\d{2} до \d{1,2}:\d{2}.*уничтожено", text, re.IGNORECASE))
 
 def extract_regions(text):
-    """Извлекает регионы из текста, включая перечисления через запятую и "и" """
+    """Извлекает регионы из текста - улучшенная версия с поддержкой родительного падежа"""
     text_lower = text.lower()
     found = set()
 
-    # Список всех возможных названий регионов для поиска
-    all_region_names = list(REGION_ALIASES.keys()) + list(REGION_ALIASES.values())
-    all_region_names = list(set(all_region_names))  # Убираем дубликаты
+    # 1. Поиск областей в родительном падеже: "Брянской области", "Курской области", "Белгородской области"
+    genitive_matches = re.findall(r'([А-Яа-яёЁ]+(?:ской|ской))\s+области', text_lower)
+    for region_name in genitive_matches:
+        for alias, norm in REGION_ALIASES.items():
+            if region_name in alias.lower():
+                found.add(norm)
+                print(f"  🔍 Найден регион (род. падеж): {region_name} -> {norm}")
+                break
 
-    # 1. Ищем точные совпадения с алиасами
+    # 2. Поиск областей в именительном падеже: "Брянская область", "Курская область"
+    nominative_matches = re.findall(r'([А-Яа-яёЁ]+(?:ская|ская))\s+область', text_lower)
+    for region_name in nominative_matches:
+        for alias, norm in REGION_ALIASES.items():
+            if region_name in alias.lower():
+                found.add(norm)
+                print(f"  🔍 Найден регион (им. падеж): {region_name} -> {norm}")
+                break
+
+    # 3. Поиск краёв и республик
+    krai_matches = re.findall(r'([А-Яа-яёЁ]+(?:ский|ский))\s+край', text_lower)
+    for region_name in krai_matches:
+        for alias, norm in REGION_ALIASES.items():
+            if region_name in alias.lower():
+                found.add(norm)
+                print(f"  🔍 Найден край: {region_name} -> {norm}")
+                break
+
+    # 4. Прямое сопоставление по алиасам
     for alias, norm in REGION_ALIASES.items():
         if alias.lower() in text_lower:
             found.add(norm)
 
-    # 2. Ищем названия областей/краев/республик через регулярное выражение
-    # Паттерн для поиска: "Брянской области", "Курской области", "Белгородской области"
-    # Также "Брянская область", "Курская область" и т.д.
-    patterns = [
-        r'([А-Яа-яёЁ][а-яёЁ]+(?:ской|ской|ской|ской)?)\s+(?:области|область)',
-        r'([А-Яа-яёЁ][а-яёЁ]+(?:ский|ский|ский|ский)?)\s+(?:край|края)',
-        r'([А-Яа-яёЁ][а-яёЁ]+(?:ская|ская)?)\s+(?:республика|республики)',
-        r'([А-Яа-яёЁ][а-яёЁ]+(?:ский|ский)?)\s+(?:АО|автономный округ)',
-    ]
-    
-    for pattern in patterns:
-        matches = re.findall(pattern, text_lower, re.IGNORECASE)
-        for match in matches:
-            # Пробуем найти полное название региона
-            for alias, norm in REGION_ALIASES.items():
-                if match.lower() in alias.lower() or match.lower() in norm.lower():
-                    found.add(norm)
-                    break
-
-    # 3. Специальная обработка для фразы "Приграничные районы X, Y, Z области"
-    # Пример: "Приграничные районы Брянской области, Курской области, Белгородской области"
-    border_match = re.search(r'приграничные районы\s+([^\.]+?\.)?', text_lower)
-    if border_match:
-        border_text = border_match.group(1) if border_match.group(1) else border_match.group(0)
-        # Ищем названия областей в этой фразе
-        region_matches = re.findall(r'([А-Яа-яёЁ]+(?:ской|ской)?)\s+области', border_text, re.IGNORECASE)
-        for region_name in region_matches:
-            for alias, norm in REGION_ALIASES.items():
-                if region_name.lower() in alias.lower():
-                    found.add(norm)
-                    break
-
-    # 4. Ищем названия городов и регионов
-    for alias, norm in REGION_ALIASES.items():
-        # Ищем как отдельное слово
-        if re.search(r'\b' + re.escape(alias.lower()) + r'\b', text_lower):
-            found.add(norm)
-
-    # 5. Специальные ключевые слова для ДНР/ЛНР и других
+    # 5. Специальные ключевые слова
     if re.search(r'\b(днр|dnr|донецк|горловка|макеевка|енакиево)\b', text_lower):
         found.add("Донецкая Народная Республика")
     if re.search(r'\b(лнр|lnr|луганск|алчевск|брянка)\b', text_lower):
-        found.add("Луганская Народная Республика")
-    if re.search(r'\b(лднр|ldnr)\b', text_lower):
-        found.add("Донецкая Народная Республика")
         found.add("Луганская Народная Республика")
     if re.search(r'запорожск|zaporizh', text_lower):
         found.add("Запорожская область")
     if re.search(r'херсон|kherson', text_lower):
         found.add("Херсонская область")
-    if re.search(r'крым|crimea', text_lower):
+    if re.search(r'крым|crimea|севастополь|симферополь', text_lower):
         found.add("Республика Крым")
-    if re.search(r'краснодар', text_lower):
+    if re.search(r'краснодар|кубань', text_lower):
         found.add("Краснодарский край")
-    if re.search(r'ростов', text_lower):
+    if re.search(r'ростов|таганрог', text_lower):
         found.add("Ростовская область")
 
     return list(found)
@@ -585,7 +561,6 @@ def detect_status(text):
     ]):
         return "clear"
 
-    # Ложная цель - игнорируем
     if "ложная цель" in t:
         return None
 
@@ -610,7 +585,7 @@ def detect_status(text):
     ]):
         return "drone_attack"
 
-    # Опасность/угроза БПЛА (потенциальная)
+    # Опасность/угроза БПЛА
     if any(w in t for w in [
         "опасность по бпла", "угроза атаки", "внимание по бпла", "меры безопасности",
         "опасность сохраняется", "повторно", "возможно появление", "fpv", "fpv-дронам",
@@ -626,7 +601,6 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
     if not text:
         return False
 
-    # Фильтруем рекламу только для основного канала
     if source == "main" and is_pure_ad_message(text):
         return False
 
@@ -637,7 +611,6 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
     if not regions:
         return False
 
-    # Для канала ДНР/ЛНР фильтруем только разрешённые регионы
     if source == "dpr":
         regions = [r for r in regions if r in ALLOWED_DPR_REGIONS]
         if not regions:
@@ -661,11 +634,8 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
         cur_data = region_statuses.get(r, {})
         cur_status = cur_data.get("status")
 
-        # Для канала ДНР/ЛНР (Новороссия) - ЛЮБОЙ статус перебивает ЛЮБОЙ статус
         if source == "dpr":
-            # Всегда перезаписываем, без проверки приоритетов
             pass
-        # Для основного канала — соблюдаем приоритеты
         elif not is_history and status != "clear":
             if cur_status is not None and STATUS_PRIORITY.get(status, 99) > STATUS_PRIORITY.get(cur_status, 99):
                 if msg_id:
@@ -699,23 +669,19 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
 
 # ---------- ФОНОВАЯ ЗАДАЧА ДЛЯ УСТАРЕВАНИЯ СТАТУСОВ ----------
 def periodic_expire():
-    """Запускает проверку устаревших статусов каждые 10 минут и отправляет сводку если были изменения"""
     global telegram_client
     
     while True:
-        time.sleep(600)  # 10 минут
+        time.sleep(600)
         try:
             print("🔍 Проверка устаревших статусов...")
             changed = expire_old_statuses()
             if changed and telegram_client:
                 print("📢 Отправляем обновлённую сводку после устаревания...")
-                # Запускаем асинхронную отправку в синхронном контексте
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(send_report(telegram_client))
                 loop.close()
-            elif changed and not telegram_client:
-                print("⚠️ Клиент Telegram не инициализирован, сводка не отправлена")
         except Exception as e:
             print(f"❌ Ошибка при устаревании статусов: {e}")
 
@@ -842,7 +808,6 @@ async def poll_messages():
     while True:
         await asyncio.sleep(30)
 
-        # Основной канал
         try:
             messages = await telegram_client.get_messages(CHANNEL_USERNAME, limit=50)
             if messages:
@@ -861,7 +826,6 @@ async def poll_messages():
         except Exception as e:
             print(f"❌ Ошибка основного канала: {e}")
 
-        # Канал ДНР/ЛНР (Новороссия)
         try:
             dpr_messages = await telegram_client.get_messages(DPR_CHANNEL, limit=50)
             if dpr_messages:
@@ -888,23 +852,18 @@ async def main():
     print("✅ Telegram клиент запущен")
 
     load_state()
-
-    # Применяем устаревание к загруженному состоянию
     expire_old_statuses()
 
     last_msg_id_main_loaded = last_msg_id_main
     last_msg_id_dpr_loaded = last_msg_id_dpr
 
-    print("📥 Загружаем историю (по одному сообщению, от старых к новым)...")
+    print("📥 Загружаем историю...")
 
-    # ========== ОСНОВНОЙ КАНАЛ ==========
     try:
         all_messages = await telegram_client.get_messages(CHANNEL_USERNAME, limit=200)
         if all_messages:
             sorted_messages = sorted(all_messages, key=lambda x: x.id)
-            
             last_msg_id_main = sorted_messages[-1].id
-            
             new_count = 0
             for msg in sorted_messages:
                 if msg.id <= last_msg_id_main_loaded:
@@ -915,19 +874,15 @@ async def main():
                     process_message(msg.message, msg.id, source="main", msg_date=msg.date, is_history=True)
                     new_count += 1
                     await asyncio.sleep(0.05)
-            
             print(f"✅ Обработано {len(sorted_messages)} сообщений из основного канала (новых: {new_count})")
     except Exception as e:
         print(f"❌ Ошибка основного канала: {e}")
 
-    # ========== КАНАЛ ДНР/ЛНР (НОВОРОССИЯ) ==========
     try:
         all_messages = await telegram_client.get_messages(DPR_CHANNEL, limit=200)
         if all_messages:
             sorted_messages = sorted(all_messages, key=lambda x: x.id)
-            
             last_msg_id_dpr = sorted_messages[-1].id
-            
             new_count = 0
             for msg in sorted_messages:
                 if msg.id <= last_msg_id_dpr_loaded:
@@ -938,12 +893,10 @@ async def main():
                     process_message(msg.message, msg.id, source="dpr", msg_date=msg.date, is_history=True)
                     new_count += 1
                     await asyncio.sleep(0.05)
-            
             print(f"✅ Обработано {len(sorted_messages)} сообщений из канала ДНР/ЛНР (новых: {new_count})")
     except Exception as e:
         print(f"❌ Ошибка канала ДНР/ЛНР: {e}")
 
-    # Ещё раз применяем устаревание после загрузки истории
     expire_old_statuses()
 
     print(f"📊 Статусов регионов: {len(region_statuses)}")
@@ -954,7 +907,6 @@ async def main():
     asyncio.create_task(poll_messages())
     print("🔄 Polling запущен (каждые 30 секунд)")
 
-    # Запускаем фоновые задачи
     threading.Thread(target=periodic_expire, daemon=True).start()
     threading.Thread(target=run_flask, daemon=True).start()
     threading.Thread(target=keep_alive, daemon=True).start()
