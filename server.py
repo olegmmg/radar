@@ -502,18 +502,58 @@ def is_superseded_by_later(text):
     return bool(re.search(r"с \d{1,2}:\d{2} до \d{1,2}:\d{2}.*уничтожено", text, re.IGNORECASE))
 
 def extract_regions(text):
-    """Извлекает регионы из текста, включая перечисления через запятую"""
-    normalized = ' '.join(text.split())
+    """Извлекает регионы из текста, включая перечисления через запятую и "и" """
+    text_lower = text.lower()
     found = set()
 
-    # 1. Прямое сопоставление по алиасам
+    # Список всех возможных названий регионов для поиска
+    all_region_names = list(REGION_ALIASES.keys()) + list(REGION_ALIASES.values())
+    all_region_names = list(set(all_region_names))  # Убираем дубликаты
+
+    # 1. Ищем точные совпадения с алиасами
     for alias, norm in REGION_ALIASES.items():
-        if alias.lower() in normalized.lower():
+        if alias.lower() in text_lower:
             found.add(norm)
 
-    text_lower = normalized.lower()
+    # 2. Ищем названия областей/краев/республик через регулярное выражение
+    # Паттерн для поиска: "Брянской области", "Курской области", "Белгородской области"
+    # Также "Брянская область", "Курская область" и т.д.
+    patterns = [
+        r'([А-Яа-яёЁ][а-яёЁ]+(?:ской|ской|ской|ской)?)\s+(?:области|область)',
+        r'([А-Яа-яёЁ][а-яёЁ]+(?:ский|ский|ский|ский)?)\s+(?:край|края)',
+        r'([А-Яа-яёЁ][а-яёЁ]+(?:ская|ская)?)\s+(?:республика|республики)',
+        r'([А-Яа-яёЁ][а-яёЁ]+(?:ский|ский)?)\s+(?:АО|автономный округ)',
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, text_lower, re.IGNORECASE)
+        for match in matches:
+            # Пробуем найти полное название региона
+            for alias, norm in REGION_ALIASES.items():
+                if match.lower() in alias.lower() or match.lower() in norm.lower():
+                    found.add(norm)
+                    break
 
-    # 2. Специальные ключевые слова для ДНР/ЛНР
+    # 3. Специальная обработка для фразы "Приграничные районы X, Y, Z области"
+    # Пример: "Приграничные районы Брянской области, Курской области, Белгородской области"
+    border_match = re.search(r'приграничные районы\s+([^\.]+?\.)?', text_lower)
+    if border_match:
+        border_text = border_match.group(1) if border_match.group(1) else border_match.group(0)
+        # Ищем названия областей в этой фразе
+        region_matches = re.findall(r'([А-Яа-яёЁ]+(?:ской|ской)?)\s+области', border_text, re.IGNORECASE)
+        for region_name in region_matches:
+            for alias, norm in REGION_ALIASES.items():
+                if region_name.lower() in alias.lower():
+                    found.add(norm)
+                    break
+
+    # 4. Ищем названия городов и регионов
+    for alias, norm in REGION_ALIASES.items():
+        # Ищем как отдельное слово
+        if re.search(r'\b' + re.escape(alias.lower()) + r'\b', text_lower):
+            found.add(norm)
+
+    # 5. Специальные ключевые слова для ДНР/ЛНР и других
     if re.search(r'\b(днр|dnr|донецк|горловка|макеевка|енакиево)\b', text_lower):
         found.add("Донецкая Народная Республика")
     if re.search(r'\b(лнр|lnr|луганск|алчевск|брянка)\b', text_lower):
@@ -525,70 +565,56 @@ def extract_regions(text):
         found.add("Запорожская область")
     if re.search(r'херсон|kherson', text_lower):
         found.add("Херсонская область")
-
-    # 3. НОВОЕ: обработка перечислений регионов через запятую и "и"
-    # Пример: "Брянской области, Курской области, Белгородской области"
-    # Ищем паттерны: название_области[, название_области]*
-    region_pattern = r'([А-Яа-яёЁ\s-]+?(?:область|край|республика|ао|округ|АО|Республика|Край))'
-    
-    # Ищем все совпадения с названиями регионов
-    matches = re.findall(region_pattern, normalized, re.IGNORECASE)
-    for match in matches:
-        match_clean = match.strip().lower()
-        # Проверяем, есть ли такое название в алиасах
-        for alias, norm in REGION_ALIASES.items():
-            if alias.lower() == match_clean or match_clean in alias.lower():
-                found.add(norm)
-                break
-            # Также проверяем частичное совпадение (например, "Брянская" -> "Брянская область")
-            if match_clean in alias.lower() and len(match_clean) > 5:
-                found.add(norm)
-                break
-
-    # 4. Дополнительная проверка на "Приграничные районы X области"
-    border_pattern = r'приграничные районы\s+([А-Яа-яёЁ\s-]+?(?:область|край))'
-    border_matches = re.findall(border_pattern, text_lower, re.IGNORECASE)
-    for match in border_matches:
-        for alias, norm in REGION_ALIASES.items():
-            if match in alias.lower():
-                found.add(norm)
-                break
+    if re.search(r'крым|crimea', text_lower):
+        found.add("Республика Крым")
+    if re.search(r'краснодар', text_lower):
+        found.add("Краснодарский край")
+    if re.search(r'ростов', text_lower):
+        found.add("Ростовская область")
 
     return list(found)
 
 def detect_status(text):
     t = text.lower()
 
+    # Отбой
     if any(w in t for w in [
         "отбой", "отбой опасности", "отбой по бпла", "отбой ракетной опасности",
-        "отбой авиационной", "отбой фиксации", "отбой по пкр", "отбой по бэк", "все спокойно"
+        "отбой авиационной", "отбой фиксации", "отбой по пкр", "отбой по бэк",
+        "все спокойно", "тихо", "обстановка спокойная"
     ]):
         return "clear"
 
+    # Ложная цель - игнорируем
     if "ложная цель" in t:
         return None
 
+    # Ракетная тревога
     if any(w in t for w in [
         "ракетная тревога", "ракетной тревоги", "тревога по пкр", "тревога по бэк",
-        "ракетно бомбовая опасность", "авиационная ракетная"
+        "ракетно бомбовая опасность", "авиационная ракетная", "авиационная ракетная бомбовая опасность"
     ]):
         return "missile_alert"
 
+    # Ракетная опасность
     if any(w in t for w in [
         "ракетная опасность", "ракетной опасности", "опасность по пкр", "опасность по бэк"
     ]):
         return "missile_danger"
 
+    # Активная атака БПЛА
     if any(w in t for w in [
         "работа пво", "сбитие", "сбития", "фиксация бпла", "фиксации бпла",
         "группа бпла", "группы бпла", "тревога по бпла", "атака бпла", "атакуют",
-        "много бпла", "волна бпла", "фиксация групп", "идут сбития"
+        "много бпла", "волна бпла", "фиксация групп", "идут сбития", "массовый запуск"
     ]):
         return "drone_attack"
 
+    # Опасность/угроза БПЛА (потенциальная)
     if any(w in t for w in [
         "опасность по бпла", "угроза атаки", "внимание по бпла", "меры безопасности",
-        "опасность сохраняется", "повторно", "возможно появление", "fpv", "единичных бпла"
+        "опасность сохраняется", "повторно", "возможно появление", "fpv", "fpv-дронам",
+        "единичных бпла", "ожидаем", "в ближайшие дни", "внимание"
     ]):
         return "drone_danger"
 
@@ -600,6 +626,7 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
     if not text:
         return False
 
+    # Фильтруем рекламу только для основного канала
     if source == "main" and is_pure_ad_message(text):
         return False
 
@@ -610,6 +637,7 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
     if not regions:
         return False
 
+    # Для канала ДНР/ЛНР фильтруем только разрешённые регионы
     if source == "dpr":
         regions = [r for r in regions if r in ALLOWED_DPR_REGIONS]
         if not regions:
