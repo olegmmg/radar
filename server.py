@@ -14,7 +14,6 @@ def add_cors(response):
     response.headers["Access-Control-Allow-Methods"] = "GET"
     return response
 
-# ---------- НАСТРОЙКИ ----------
 API_ID = int(os.environ["API_ID"])
 API_HASH = os.environ["API_HASH"]
 SESSION_STRING = os.environ["SESSION_STRING"]
@@ -31,7 +30,6 @@ print(f"📡 Канал ДНР/ЛНР: {DPR_CHANNEL}")
 print(f"📢 Канал для сводок: @{REPORT_CHANNEL}")
 print(f"⏰ Статусы устаревают через: {STATUS_EXPIRY_HOURS} часов")
 
-# Приоритеты (меньше число = выше приоритет)
 STATUS_PRIORITY = {
     "missile_alert": 0,
     "missile_danger": 1,
@@ -292,14 +290,10 @@ region_statuses = {}
 alert_history = []
 last_msg_id_main = 0
 last_msg_id_dpr = 0
-
 PERSIST_FILE = "/tmp/radar_state.json"
-
-# Глобальная переменная для клиента Telegram
 telegram_client = None
 
 def expire_old_statuses():
-    """Устанавливает статус clear для регионов, у которых последнее обновление старше STATUS_EXPIRY_HOURS часов"""
     global region_statuses, last_summary
     now = datetime.now(timezone.utc)
     expiry_time = now - timedelta(hours=STATUS_EXPIRY_HOURS)
@@ -337,7 +331,6 @@ def expire_old_statuses():
     return changed
 
 def clear_status_by_type(status_type, source="system"):
-    """Сбрасывает регионы с определённым типом статуса"""
     global region_statuses, last_summary
     now = datetime.now(timezone.utc).isoformat()
     cleared_count = 0
@@ -482,18 +475,49 @@ def format_summary(regions):
 
     return message
 
-async def send_report(client):
+async def send_report(client, force=False):
     if not region_statuses:
         print("⚠️ Нет данных о регионах, сводка не отправлена")
         return
+    
     summary = format_summary(region_statuses)
-    if summary is None:
+    if summary is None and not force:
         print("ℹ️ Сводка не изменилась, пропускаем")
         return
+    
+    if summary is None and force:
+        if last_summary and last_summary.get("timestamp"):
+            now = datetime.now(timezone.utc) + timedelta(hours=3)
+            time_str = now.strftime("%H:%M | %d/%m")
+            summary = f"✈️ *Воздушная тревога* 🚀\n`{time_str}`\n\n"
+            
+            active_alerts = []
+            active_alerts.extend(last_summary.get("missile_alert", []))
+            active_alerts.extend(last_summary.get("missile_danger", []))
+            active_alerts.extend(last_summary.get("drone_attack", []))
+            
+            summary += "🔴 *АКТИВНАЯ ТРЕВОГА*\n"
+            if active_alerts:
+                summary += "\n".join(active_alerts) + "\n\n"
+            else:
+                summary += "    • Отсутствует\n\n"
+            
+            summary += "🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ*\n"
+            if last_summary.get("drone_danger", []):
+                summary += "\n".join(last_summary.get("drone_danger", [])) + "\n\n"
+            else:
+                summary += "    • Отсутствует\n\n"
+            
+            summary += "---\n📍 [Карта тревог](https://olegmmg.github.io/Radar/)"
+            summary += "\n📍 [TG Радар Россия](https://t.me/RadarMapRf)"
+        else:
+            print("ℹ️ Нет данных для форсированной отправки")
+            return
+    
     try:
         entity = await client.get_entity(REPORT_CHANNEL)
         await client.send_message(entity, summary, link_preview=False)
-        print(f"📢 Отправлена сводка в @{REPORT_CHANNEL}")
+        print(f"📢 Отправлена сводка в @{REPORT_CHANNEL}" + (" (форсированно)" if force else ""))
     except FloodWaitError as e:
         print(f"⏳ Flood wait {e.seconds} секунд")
         await asyncio.sleep(e.seconds)
@@ -526,9 +550,9 @@ def is_pure_ad_message(text):
     if "Радар ДНР" in text:
         return False
     
-    # Рекламные фразы для фильтрации
     ad_indicators = [
         "❗️ВНИМАНИЕ",
+        "Враг планирует",
         "Впервые регионы РФ подверглись массовым РАКЕТНЫМ атакам",
         "создать телеграм каналы для оповещения граждан",
         "Ищите свой регион и подписывайтесь",
@@ -553,7 +577,6 @@ def is_pure_ad_message(text):
         if indicator.upper() in text_upper:
             return True
     
-    # Если много ссылок - тоже реклама
     link_count = len(re.findall(r'https?://t\.me/', text))
     if link_count > 3:
         return True
@@ -565,11 +588,9 @@ def is_superseded_by_later(text):
     return bool(re.search(r"с \d{1,2}:\d{2} до \d{1,2}:\d{2}.*уничтожено", text, re.IGNORECASE))
 
 def extract_regions(text):
-    """Извлекает регионы из текста - улучшенная версия с поддержкой родительного падежа"""
     text_lower = text.lower()
     found = set()
-
-    # 1. Поиск областей в родительном падеже: "Брянской области", "Курской области", "Белгородской области"
+    
     genitive_matches = re.findall(r'([А-Яа-яёЁ]+(?:ской|ской))\s+области', text_lower)
     for region_name in genitive_matches:
         for alias, norm in REGION_ALIASES.items():
@@ -578,7 +599,6 @@ def extract_regions(text):
                 print(f"  🔍 Найден регион (род. падеж): {region_name} -> {norm}")
                 break
 
-    # 2. Поиск областей в именительном падеже: "Брянская область", "Курская область"
     nominative_matches = re.findall(r'([А-Яа-яёЁ]+(?:ская|ская))\s+область', text_lower)
     for region_name in nominative_matches:
         for alias, norm in REGION_ALIASES.items():
@@ -587,7 +607,6 @@ def extract_regions(text):
                 print(f"  🔍 Найден регион (им. падеж): {region_name} -> {norm}")
                 break
 
-    # 3. Поиск краёв
     krai_matches = re.findall(r'([А-Яа-яёЁ]+(?:ский|ский))\s+край', text_lower)
     for region_name in krai_matches:
         for alias, norm in REGION_ALIASES.items():
@@ -596,7 +615,6 @@ def extract_regions(text):
                 print(f"  🔍 Найден край: {region_name} -> {norm}")
                 break
 
-    # 4. Поиск республик
     republic_matches = re.findall(r'(?:республика|республики)\s+([А-Яа-яёЁ][а-яёЁ]+(?:ская|ская)?)', text_lower)
     for region_name in republic_matches:
         for alias, norm in REGION_ALIASES.items():
@@ -605,7 +623,6 @@ def extract_regions(text):
                 print(f"  🔍 Найдена республика: {region_name} -> {norm}")
                 break
 
-    # 5. Поиск по прямым названиям республик
     direct_republics = [
         "башкортостан", "чувашия", "татарстан", "удмуртия", 
         "марий эл", "мордовия", "карелия", "коми", "адыгея",
@@ -619,12 +636,10 @@ def extract_regions(text):
                     print(f"  🔍 Найдена республика по прямому названию: {rep} -> {norm}")
                     break
 
-    # 6. Прямое сопоставление по алиасам
     for alias, norm in REGION_ALIASES.items():
         if alias.lower() in text_lower:
             found.add(norm)
 
-    # 7. Специальные ключевые слова
     if re.search(r'\b(днр|dnr|донецк|горловка|макеевка|енакиево)\b', text_lower):
         found.add("Донецкая Народная Республика")
     if re.search(r'\b(лнр|lnr|луганск|алчевск|брянка)\b', text_lower):
@@ -645,9 +660,7 @@ def extract_regions(text):
 def detect_status(text):
     t = text.lower()
 
-    # Массовый отбой по типам
-    if "отбой опасности бпла по всем ранее объявленным регионам" in t or \
-       "отбой опасности бпла по всем ранее объявленным регионам" in t:
+    if "отбой опасности бпла по всем ранее объявленным регионам" in t:
         return "mass_clear_drone_danger"
     
     if "отбой ракетной опасности по всем ранее объявленным регионам" in t:
@@ -656,7 +669,6 @@ def detect_status(text):
     if "отбой ракетной тревоги по всем ранее объявленным регионам" in t:
         return "mass_clear_missile_alert"
 
-    # Обычный отбой
     if any(w in t for w in [
         "отбой", "отбой опасности", "отбой по бпла", "отбой ракетной опасности",
         "отбой авиационной", "отбой фиксации", "отбой по пкр", "отбой по бэк",
@@ -667,20 +679,17 @@ def detect_status(text):
     if "ложная цель" in t:
         return None
 
-    # Ракетная тревога
     if any(w in t for w in [
         "ракетная тревога", "ракетной тревоги", "тревога по пкр", "тревога по бэк",
         "ракетно бомбовая опасность", "авиационная ракетная", "авиационная ракетная бомбовая опасность"
     ]):
         return "missile_alert"
 
-    # Ракетная опасность
     if any(w in t for w in [
         "ракетная опасность", "ракетной опасности", "опасность по пкр", "опасность по бэк"
     ]):
         return "missile_danger"
 
-    # Активная атака БПЛА
     if any(w in t for w in [
         "работа пво", "сбитие", "сбития", "фиксация бпла", "фиксации бпла",
         "группа бпла", "группы бпла", "тревога по бпла", "атака бпла", "атакуют",
@@ -688,7 +697,6 @@ def detect_status(text):
     ]):
         return "drone_attack"
 
-    # Опасность/угроза БПЛА
     if any(w in t for w in [
         "опасность по бпла", "угроза атаки", "внимание по бпла", "меры безопасности",
         "опасность сохраняется", "повторно", "возможно появление", "fpv", "fpv-дронам",
@@ -713,7 +721,6 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
 
     status = detect_status(text)
     
-    # Обработка массовых отбоев
     if status and status.startswith("mass_clear_"):
         if status == "mass_clear_drone_danger":
             updated = clear_status_by_type("drone_danger", source)
@@ -791,7 +798,6 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
 
     return updated
 
-# ---------- ФОНОВАЯ ЗАДАЧА ДЛЯ УСТАРЕВАНИЯ СТАТУСОВ ----------
 def periodic_expire():
     global telegram_client
     
@@ -804,12 +810,11 @@ def periodic_expire():
                 print("📢 Отправляем обновлённую сводку после устаревания...")
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                loop.run_until_complete(send_report(telegram_client))
+                loop.run_until_complete(send_report(telegram_client, force=True))
                 loop.close()
         except Exception as e:
             print(f"❌ Ошибка при устаревании статусов: {e}")
 
-# ---------- FLASK ----------
 @app.route("/api/statuses")
 def get_statuses():
     now = datetime.now(timezone.utc)
@@ -855,12 +860,9 @@ def index():
         "last_update": datetime.now(timezone.utc).isoformat()
     })
 
-# ---------- GITHUB ----------
 def push_to_github():
-    # Пустышка - функция отключена
     pass
 
-# ---------- ФОНОВЫЕ ЗАДАЧИ ----------
 def periodic_push():
     while True:
         time.sleep(60)
@@ -881,7 +883,6 @@ def run_flask():
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
-# ---------- TELEGRAM ----------
 async def poll_messages():
     global last_msg_id_main, last_msg_id_dpr, telegram_client
 
