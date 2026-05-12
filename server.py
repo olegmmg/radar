@@ -198,12 +198,17 @@ REGION_ALIASES = {
     "Пермь": "Пермский край",
     "Республика Удмуртия": "Республика Удмуртия",
     "Республика Башкортостан": "Республика Башкортостан",
+    "Башкортостан": "Республика Башкортостан",
     "Оренбургская область": "Оренбургская область",
     "Самарская область": "Самарская область",
     "Чувашская Республика": "Чувашская Республика",
+    "Чувашия": "Чувашская Республика",
     "Республика Татарстан": "Республика Татарстан",
+    "Татарстан": "Республика Татарстан",
     "Республика Марий Эл": "Республика Марий Эл",
+    "Марий Эл": "Республика Марий Эл",
     "Республика Мордовия": "Республика Мордовия",
+    "Мордовия": "Республика Мордовия",
     "Ставропольский край": "Ставропольский край",
     "Ставрополь": "Ставропольский край",
     "Невинномысск": "Ставропольский край",
@@ -489,6 +494,39 @@ def is_pure_ad_message(text):
         return False
     if "Радар ДНР" in text:
         return False
+    
+    # Рекламные фразы для фильтрации
+    ad_indicators = [
+        "❗️ВНИМАНИЕ",
+        "Впервые регионы РФ подверглись массовым РАКЕТНЫМ атакам",
+        "создать телеграм каналы для оповещения граждан",
+        "Ищите свой регион и подписывайтесь",
+        "НЕ БУДУТ БЛОКИРОВАТЬ",
+        "Нет вашего региона",
+        "вакансия без опыта",
+        "Пятёрочка ищет людей",
+        "платят от",
+        "АВАНС",
+        "Удалять негативные отзывы",
+        "Ставить лайки под роликами",
+        "Сравнивать цены",
+        "24/7 (https://t.me/",
+        "Москва 24/7",
+        "Питер 24/7",
+        "Подписывайтесь",
+        "будет автоматически выдан АВАНС"
+    ]
+    
+    text_upper = text.upper()
+    for indicator in ad_indicators:
+        if indicator.upper() in text_upper:
+            return True
+    
+    # Если много ссылок - тоже реклама
+    link_count = len(re.findall(r'https?://t\.me/', text))
+    if link_count > 3:
+        return True
+    
     cleaned = clean_message_for_frontend(text)
     return not cleaned or len(cleaned) < 15
 
@@ -518,7 +556,7 @@ def extract_regions(text):
                 print(f"  🔍 Найден регион (им. падеж): {region_name} -> {norm}")
                 break
 
-    # 3. Поиск краёв и республик
+    # 3. Поиск краёв
     krai_matches = re.findall(r'([А-Яа-яёЁ]+(?:ский|ский))\s+край', text_lower)
     for region_name in krai_matches:
         for alias, norm in REGION_ALIASES.items():
@@ -527,12 +565,35 @@ def extract_regions(text):
                 print(f"  🔍 Найден край: {region_name} -> {norm}")
                 break
 
-    # 4. Прямое сопоставление по алиасам
+    # 4. Поиск республик
+    republic_matches = re.findall(r'(?:республика|республики)\s+([А-Яа-яёЁ][а-яёЁ]+(?:ская|ская)?)', text_lower)
+    for region_name in republic_matches:
+        for alias, norm in REGION_ALIASES.items():
+            if region_name in alias.lower() or region_name in norm.lower():
+                found.add(norm)
+                print(f"  🔍 Найдена республика: {region_name} -> {norm}")
+                break
+
+    # 5. Поиск по прямым названиям республик
+    direct_republics = [
+        "башкортостан", "чувашия", "татарстан", "удмуртия", 
+        "марий эл", "мордовия", "карелия", "коми", "адыгея",
+        "калмыкия", "алтай", "хакасия", "тыва", "бурятия", "саха"
+    ]
+    for rep in direct_republics:
+        if rep in text_lower:
+            for alias, norm in REGION_ALIASES.items():
+                if rep in alias.lower() or rep in norm.lower():
+                    found.add(norm)
+                    print(f"  🔍 Найдена республика по прямому названию: {rep} -> {norm}")
+                    break
+
+    # 6. Прямое сопоставление по алиасам
     for alias, norm in REGION_ALIASES.items():
         if alias.lower() in text_lower:
             found.add(norm)
 
-    # 5. Специальные ключевые слова
+    # 7. Специальные ключевые слова
     if re.search(r'\b(днр|dnr|донецк|горловка|макеевка|енакиево)\b', text_lower):
         found.add("Донецкая Народная Республика")
     if re.search(r'\b(лнр|lnr|луганск|алчевск|брянка)\b', text_lower):
@@ -602,6 +663,7 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
         return False
 
     if source == "main" and is_pure_ad_message(text):
+        print(f"  🚫 Рекламное сообщение пропущено: {text[:50]}...")
         return False
 
     if is_superseded_by_later(text):
@@ -734,44 +796,6 @@ def index():
 # ---------- GITHUB ----------
 def push_to_github():
     # Пустышка - функция отключена
-    # if not GITHUB_TOKEN or not GITHUB_REPO:
-    #     return
-    #
-    # url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/data/statuses.json"
-    # headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    #
-    # export_data = {
-    #     "regions": {},
-    #     "last_updated": datetime.now(timezone.utc).isoformat()
-    # }
-    #
-    # for r, d in region_statuses.items():
-    #     export_data["regions"][r] = {
-    #         "status": d["status"],
-    #         "last_update": d["last_update"],
-    #         "message": d.get("message", "")
-    #     }
-    #
-    # content = json.dumps(export_data, ensure_ascii=False, indent=2)
-    # b64 = base64.b64encode(content.encode()).decode()
-    #
-    # try:
-    #     resp = requests.get(url, headers=headers)
-    #     sha = resp.json().get("sha") if resp.status_code == 200 else None
-    # except Exception:
-    #     sha = None
-    #
-    # body = {"message": "update", "content": b64, "branch": "main"}
-    # if sha:
-    #     body["sha"] = sha
-    #
-    # try:
-    #     requests.put(url, headers=headers, json=body)
-    #     print("📤 Данные отправлены в GitHub")
-    # except Exception as e:
-    #     print(f"❌ Ошибка отправки в GitHub: {e}")
-    
-    # Функция отключена
     pass
 
 # ---------- ФОНОВЫЕ ЗАДАЧИ ----------
@@ -779,7 +803,6 @@ def periodic_push():
     while True:
         time.sleep(60)
         if region_statuses:
-            push_to_github()
             save_state()
 
 def keep_alive():
