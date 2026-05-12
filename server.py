@@ -336,6 +336,37 @@ def expire_old_statuses():
     
     return changed
 
+def clear_status_by_type(status_type, source="system"):
+    """Сбрасывает регионы с определённым типом статуса"""
+    global region_statuses, last_summary
+    now = datetime.now(timezone.utc).isoformat()
+    cleared_count = 0
+    
+    status_names = {
+        "drone_danger": "опасность БПЛА",
+        "missile_danger": "ракетная опасность",
+        "missile_alert": "ракетная тревога",
+        "drone_attack": "атака БПЛА"
+    }
+    
+    for region, data in list(region_statuses.items()):
+        if data.get("status") == status_type:
+            region_statuses[region] = {
+                "status": "clear",
+                "last_update": now,
+                "message": f"Отбой {status_names.get(status_type, status_type)} по всем регионам",
+                "source": source
+            }
+            cleared_count += 1
+            print(f"  🚫 {region}: отбой {status_names.get(status_type, status_type)} → clear")
+    
+    if cleared_count > 0:
+        print(f"✅ Отбой {status_names.get(status_type, status_type)}: сброшено {cleared_count} регионов")
+        last_summary = {"drone_danger": [], "drone_attack": [], "missile_danger": [], "missile_alert": [], "timestamp": None}
+        save_state()
+    
+    return cleared_count > 0
+
 def save_state():
     try:
         state = {
@@ -614,7 +645,18 @@ def extract_regions(text):
 def detect_status(text):
     t = text.lower()
 
-    # Отбой
+    # Массовый отбой по типам
+    if "отбой опасности бпла по всем ранее объявленным регионам" in t or \
+       "отбой опасности бпла по всем ранее объявленным регионам" in t:
+        return "mass_clear_drone_danger"
+    
+    if "отбой ракетной опасности по всем ранее объявленным регионам" in t:
+        return "mass_clear_missile_danger"
+    
+    if "отбой ракетной тревоги по всем ранее объявленным регионам" in t:
+        return "mass_clear_missile_alert"
+
+    # Обычный отбой
     if any(w in t for w in [
         "отбой", "отбой опасности", "отбой по бпла", "отбой ракетной опасности",
         "отбой авиационной", "отбой фиксации", "отбой по пкр", "отбой по бэк",
@@ -669,6 +711,27 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
     if is_superseded_by_later(text):
         return False
 
+    status = detect_status(text)
+    
+    # Обработка массовых отбоев
+    if status and status.startswith("mass_clear_"):
+        if status == "mass_clear_drone_danger":
+            updated = clear_status_by_type("drone_danger", source)
+        elif status == "mass_clear_missile_danger":
+            updated = clear_status_by_type("missile_danger", source)
+        elif status == "mass_clear_missile_alert":
+            updated = clear_status_by_type("missile_alert", source)
+        
+        if updated and not is_history:
+            alert_history.append({
+                "region": "ВСЕ РЕГИОНЫ",
+                "status": "mass_clear",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "message": text[:500],
+                "source": source
+            })
+        return updated
+
     regions = extract_regions(text)
     if not regions:
         return False
@@ -678,7 +741,6 @@ def process_message(text, msg_id=None, source="main", msg_date=None, is_history=
         if not regions:
             return False
 
-    status = detect_status(text)
     if not status:
         return False
 
