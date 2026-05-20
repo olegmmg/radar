@@ -591,38 +591,67 @@ def extract_regions(text):
     text_lower = text.lower()
     found = set()
     
+    # 👇 КЛЮЧЕВОЕ: проверяем, не является ли упоминание районом
+    # Если в тексте есть "XXX район" или "XXX районе" - это НЕ регион
+    # Собираем названия регионов, которые упоминаются как районы
+    region_blacklist = set()
+    
+    # Проверяем для каждого региона, не упоминается ли он как район
+    for alias, norm in REGION_ALIASES.items():
+        alias_lower = alias.lower()
+        # Ищем фразы типа "Кировский район", "Кировском районе" и т.д.
+        if re.search(rf'{re.escape(alias_lower)}(?:ский|ская|ское|ской|ского|скому|ским|ском)?\s+район', text_lower):
+            region_blacklist.add(norm)
+            print(f"  ⚠️ Игнорируем {norm} (обнаружено 'район' рядом с названием)")
+        # Также проверяем короткие названия (Киров, Тула и т.д.)
+        short_name = norm.replace(" область", "").replace(" край", "").replace(" Республика", "").replace(" республика", "")
+        short_name_lower = short_name.lower()
+        if len(short_name_lower) > 3:
+            if re.search(rf'{re.escape(short_name_lower)}(?:ский|ская|ское|ской|ского|скому|ским|ском)?\s+район', text_lower):
+                region_blacklist.add(norm)
+                print(f"  ⚠️ Игнорируем {norm} (обнаружено '{short_name}ский район')")
+    
+    # Поиск областей в родительном падеже (например: "Кировской области")
     genitive_matches = re.findall(r'([А-Яа-яёЁ]+(?:ской|ской))\s+области', text_lower)
     for region_name in genitive_matches:
         for alias, norm in REGION_ALIASES.items():
             if region_name in alias.lower():
-                found.add(norm)
-                print(f"  🔍 Найден регион (род. падеж): {region_name} -> {norm}")
+                if norm not in region_blacklist:
+                    found.add(norm)
+                    print(f"  🔍 Найден регион (род. падеж): {region_name} -> {norm}")
                 break
-
+    
+    # Поиск областей в именительном падеже (например: "Кировская область")
     nominative_matches = re.findall(r'([А-Яа-яёЁ]+(?:ская|ская))\s+область', text_lower)
     for region_name in nominative_matches:
         for alias, norm in REGION_ALIASES.items():
             if region_name in alias.lower():
-                found.add(norm)
-                print(f"  🔍 Найден регион (им. падеж): {region_name} -> {norm}")
+                if norm not in region_blacklist:
+                    found.add(norm)
+                    print(f"  🔍 Найден регион (им. падеж): {region_name} -> {norm}")
                 break
-
+    
+    # Поиск краёв
     krai_matches = re.findall(r'([А-Яа-яёЁ]+(?:ский|ский))\s+край', text_lower)
     for region_name in krai_matches:
         for alias, norm in REGION_ALIASES.items():
             if region_name in alias.lower():
-                found.add(norm)
-                print(f"  🔍 Найден край: {region_name} -> {norm}")
+                if norm not in region_blacklist:
+                    found.add(norm)
+                    print(f"  🔍 Найден край: {region_name} -> {norm}")
                 break
-
+    
+    # Поиск республик
     republic_matches = re.findall(r'(?:республика|республики)\s+([А-Яа-яёЁ][а-яёЁ]+(?:ская|ская)?)', text_lower)
     for region_name in republic_matches:
         for alias, norm in REGION_ALIASES.items():
             if region_name in alias.lower() or region_name in norm.lower():
-                found.add(norm)
-                print(f"  🔍 Найдена республика: {region_name} -> {norm}")
+                if norm not in region_blacklist:
+                    found.add(norm)
+                    print(f"  🔍 Найдена республика: {region_name} -> {norm}")
                 break
-
+    
+    # Прямые названия республик
     direct_republics = [
         "башкортостан", "чувашия", "татарстан", "удмуртия", 
         "марий эл", "мордовия", "карелия", "коми", "адыгея",
@@ -632,29 +661,31 @@ def extract_regions(text):
         if rep in text_lower:
             for alias, norm in REGION_ALIASES.items():
                 if rep in alias.lower() or rep in norm.lower():
-                    found.add(norm)
-                    print(f"  🔍 Найдена республика по прямому названию: {rep} -> {norm}")
+                    if norm not in region_blacklist:
+                        found.add(norm)
+                        print(f"  🔍 Найдена республика по прямому названию: {rep} -> {norm}")
                     break
-
+    
+    # Поиск по всем алиасам
     for alias, norm in REGION_ALIASES.items():
         if alias.lower() in text_lower:
-            found.add(norm)
-
-    if re.search(r'\b(днр|dnr|донецк|горловка|макеевка|енакиево)\b', text_lower):
-        found.add("Донецкая Народная Республика")
-    if re.search(r'\b(лнр|lnr|луганск|алчевск|брянка)\b', text_lower):
-        found.add("Луганская Народная Республика")
-    if re.search(r'запорожск|zaporizh', text_lower):
-        found.add("Запорожская область")
-    if re.search(r'херсон|kherson', text_lower):
-        found.add("Херсонская область")
-    if re.search(r'крым|crimea|севастополь|симферополь', text_lower):
-        found.add("Республика Крым")
-    if re.search(r'краснодар|кубань', text_lower):
-        found.add("Краснодарский край")
-    if re.search(r'ростов|таганрог', text_lower):
-        found.add("Ростовская область")
-
+            if norm not in region_blacklist:
+                found.add(norm)
+    
+    # Специальные ключевые слова для регионов (только если нет в чёрном списке)
+    if "Донецкая Народная Республика" not in region_blacklist:
+        if re.search(r'\b(днр|dnr|донецк|горловка|макеевка|енакиево)\b', text_lower):
+            found.add("Донецкая Народная Республика")
+    if "Луганская Народная Республика" not in region_blacklist:
+        if re.search(r'\b(лнр|lnr|луганск|алчевск|брянка)\b', text_lower):
+            found.add("Луганская Народная Республика")
+    if "Запорожская область" not in region_blacklist:
+        if re.search(r'запорожск|zaporizh', text_lower):
+            found.add("Запорожская область")
+    if "Херсонская область" not in region_blacklist:
+        if re.search(r'херсон|kherson', text_lower):
+            found.add("Херсонская область")
+    
     return list(found)
 
 def detect_status(text):
@@ -699,8 +730,8 @@ def detect_status(text):
 
     if any(w in t for w in [
         "опасность по бпла", "угроза атаки", "внимание по бпла", "меры безопасности",
-        "опасность сохраняется", "повторно", "возможно появление", "fpv", "fpv-дронам",
-        "единичных бпла", "ожидаем", "в ближайшие дни", "внимание"
+        "опасность сохраняется", "повторно", "fpv", "fpv-дронам",
+        "единичных бпла", "внимание"
     ]):
         return "drone_danger"
 
@@ -1012,7 +1043,7 @@ async def main():
     ║   📊 Статусов активно: {len(region_statuses)}
     ║   📋 Записей в истории: {len(alert_history)}
     ║   ⏰ Устаревание статусов: {STATUS_EXPIRY_HOURS} часов
-    ═══════════════════════════════════════════════════╝
+    ╚═══════════════════════════════════════════════════╝
     """)
 
     while True:
