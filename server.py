@@ -293,7 +293,6 @@ last_msg_id_dpr = 0
 PERSIST_FILE = "/tmp/radar_state.json"
 telegram_client = None
 
-# Словарь для строгого сопоставления названий в родительном падеже
 GENITIVE_MAP = {
     "костромской": "Костромская область",
     "кировской": "Кировская область",
@@ -648,10 +647,8 @@ def extract_regions(text):
     text_lower = text.lower()
     found = set()
     
-    # Собираем названия регионов, которые упоминаются как районы
     region_blacklist = set()
-    
-    # Проверяем для каждого региона, не упоминается ли он как район
+
     for alias, norm in REGION_ALIASES.items():
         alias_lower = alias.lower()
         if re.search(rf'{re.escape(alias_lower)}(?:ский|ская|ское|ской|ского|скому|ским|ском)?\s+район', text_lower):
@@ -664,28 +661,24 @@ def extract_regions(text):
                 region_blacklist.add(norm)
                 print(f"  ⚠️ Игнорируем {norm} (обнаружено '{short_name}ский район')")
     
-    # Поиск областей в родительном падеже через GENITIVE_MAP
+
     genitive_matches = re.findall(r'([А-Яа-яёЁ]+(?:ской|ской))\s+области', text_lower)
     for region_name in genitive_matches:
         region_lower = region_name.lower()
-        # Ищем точное совпадение в GENITIVE_MAP
         if region_lower in GENITIVE_MAP:
             norm = GENITIVE_MAP[region_lower]
             if norm not in region_blacklist:
                 found.add(norm)
                 print(f"  🔍 Найден регион (род. падеж, точное совпадение): {region_name} -> {norm}")
         else:
-            # Если нет в GENITIVE_MAP, пробуем старый поиск по алиасам
             for alias, norm in REGION_ALIASES.items():
                 alias_lower = alias.lower()
-                # Проверяем, что region_name является началом alias (например, "кировской" -> "кировская область")
                 if alias_lower.startswith(region_lower) or region_lower in alias_lower:
                     if norm not in region_blacklist:
                         found.add(norm)
                         print(f"  🔍 Найден регион (род. падеж, alias): {region_name} -> {norm}")
                     break
     
-    # Поиск областей в именительном падеже (например: "Кировская область")
     nominative_matches = re.findall(r'([А-Яа-яёЁ]+(?:ская|ская))\s+область', text_lower)
     for region_name in nominative_matches:
         for alias, norm in REGION_ALIASES.items():
@@ -695,7 +688,6 @@ def extract_regions(text):
                     print(f"  🔍 Найден регион (им. падеж): {region_name} -> {norm}")
                 break
     
-    # Поиск краёв
     krai_matches = re.findall(r'([А-Яа-яёЁ]+(?:ский|ский))\s+край', text_lower)
     for region_name in krai_matches:
         for alias, norm in REGION_ALIASES.items():
@@ -705,7 +697,6 @@ def extract_regions(text):
                     print(f"  🔍 Найден край: {region_name} -> {norm}")
                 break
     
-    # Поиск республик
     republic_matches = re.findall(r'(?:республика|республики)\s+([А-Яа-яёЁ][а-яёЁ]+(?:ская|ская)?)', text_lower)
     for region_name in republic_matches:
         for alias, norm in REGION_ALIASES.items():
@@ -715,7 +706,6 @@ def extract_regions(text):
                     print(f"  🔍 Найдена республика: {region_name} -> {norm}")
                 break
     
-    # Прямые названия республик
     direct_republics = [
         "башкортостан", "чувашия", "татарстан", "удмуртия", 
         "марий эл", "мордовия", "карелия", "коми", "адыгея",
@@ -730,13 +720,11 @@ def extract_regions(text):
                         print(f"  🔍 Найдена республика по прямому названию: {rep} -> {norm}")
                     break
     
-    # Поиск по всем алиасам
     for alias, norm in REGION_ALIASES.items():
         if alias.lower() in text_lower:
             if norm not in region_blacklist:
                 found.add(norm)
     
-    # Специальные ключевые слова для регионов (только если нет в чёрном списке)
     if "Донецкая Народная Республика" not in region_blacklist:
         if re.search(r'\b(днр|dnr|донецк|горловка|макеевка|енакиево)\b', text_lower):
             found.add("Донецкая Народная Республика")
