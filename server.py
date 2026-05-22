@@ -1,1105 +1,259 @@
-import os, re, json, base64, threading, time, requests, asyncio
-from datetime import datetime, timedelta, timezone
-from flask import Flask, jsonify, request
-from telethon import TelegramClient
-from telethon.sessions import StringSession
-from telethon.errors import FloodWaitError
+import os as O, re as R, json as J, base64 as B, threading as T, time as I, requests as Q, asyncio as A
+from datetime import datetime as D, timedelta as TD, timezone as TZ
+from flask import Flask as F, jsonify as Jf, request as Rq
+from telethon import TelegramClient as TC
+from telethon.sessions import StringSession as SS
+from telethon.errors import FloodWaitError as FWE
 
-app = Flask(__name__)
+_0O0O0O0O0O0O0O0 = F(__name__)
 
-@app.after_request
-def add_cors(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Methods"] = "GET"
-    return response
+@_0O0O0O0O0O0O0O0.after_request
+def _0O0O0O0O0O0O0O0O(_0O0O0O0O0O0O0O0O0):
+    _0O0O0O0O0O0O0O0O0.headers[bytes([65, 99, 99, 101, 115, 115, 45, 67, 111, 110, 116, 114, 111, 108, 45, 65, 108, 108, 111, 119, 45, 79, 114, 105, 103, 105, 110]).decode()] = bytes([42]).decode()
+    _0O0O0O0O0O0O0O0O0.headers[bytes([65, 99, 99, 101, 115, 115, 45, 67, 111, 110, 116, 114, 111, 108, 45, 65, 108, 108, 111, 119, 45, 72, 101, 97, 100, 101, 114, 115]).decode()] = bytes([67, 111, 110, 116, 101, 110, 116, 45, 84, 121, 112, 101]).decode()
+    _0O0O0O0O0O0O0O0O0.headers[bytes([65, 99, 99, 101, 115, 115, 45, 67, 111, 110, 116, 114, 111, 108, 45, 65, 108, 108, 111, 119, 45, 77, 101, 116, 104, 111, 100, 115]).decode()] = bytes([71, 69, 84]).decode()
+    return _0O0O0O0O0O0O0O0O0
 
-API_ID = int(os.environ["API_ID"])
-API_HASH = os.environ["API_HASH"]
-SESSION_STRING = os.environ["SESSION_STRING"]
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
-CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "radarrussiia")
-DPR_CHANNEL = os.environ.get("DPR_CHANNEL", "DPR_channel")
-REPORT_CHANNEL = os.environ.get("REPORT_CHANNEL", "RadarMapRf")
-STATUS_EXPIRY_HOURS = int(os.environ.get("STATUS_EXPIRY_HOURS", 12))
+_0O0O0O0O0O0O0O0O0O = int(O.environ[bytes([65, 80, 73, 95, 73, 68]).decode()])
+_0O0O0O0O0O0O0O0O0O0 = O.environ[bytes([65, 80, 73, 95, 72, 65, 83, 72]).decode()]
+_0O0O0O0O0O0O0O0O0O0O = O.environ[bytes([83, 69, 83, 83, 73, 79, 78, 95, 83, 84, 82, 73, 78, 71]).decode()]
+_0O0O0O0O0O0O0O0O0O0O0 = O.environ.get(bytes([71, 73, 84, 72, 85, 66, 95, 84, 79, 75, 69, 78]).decode(), bytes([]).decode())
+_0O0O0O0O0O0O0O0O0O0O0O = O.environ.get(bytes([71, 73, 84, 72, 85, 66, 95, 82, 69, 80, 79]).decode(), bytes([]).decode())
+_0O0O0O0O0O0O0O0O0O0O0O0 = O.environ.get(bytes([67, 72, 65, 78, 78, 69, 76, 95, 85, 83, 69, 82, 78, 65, 77, 69]).decode(), bytes([114, 97, 100, 97, 114, 114, 117, 115, 115, 105, 105, 97]).decode())
+_0O0O0O0O0O0O0O0O0O0O0O0O = O.environ.get(bytes([68, 80, 82, 95, 67, 72, 65, 78, 78, 69, 76]).decode(), bytes([68, 80, 82, 95, 99, 104, 97, 110, 110, 101, 108]).decode())
+_0O0O0O0O0O0O0O0O0O0O0O0O0 = O.environ.get(bytes([82, 69, 80, 79, 82, 84, 95, 67, 72, 65, 78, 78, 69, 76]).decode(), bytes([82, 97, 100, 97, 114, 77, 97, 112, 82, 102]).decode())
+_0O0O0O0O0O0O0O0O0O0O0O0O0O = int(O.environ.get(bytes([83, 84, 65, 84, 85, 83, 95, 69, 88, 80, 73, 82, 89, 95, 72, 79, 85, 82, 83]).decode(), bytes([49, 50]).decode()))
 
-print("✅ Конфигурация загружена")
-print(f"📡 Основной канал: {CHANNEL_USERNAME}")
-print(f"📡 Канал ДНР/ЛНР: {DPR_CHANNEL}")
-print(f"📢 Канал для сводок: @{REPORT_CHANNEL}")
-print(f"⏰ Статусы устаревают через: {STATUS_EXPIRY_HOURS} часов")
+_0O0O0O0O0O0O0O0O0O0O0O0O0O0 = {b'\x6d\x69\x73\x73\x69\x6c\x65\x5f\x61\x6c\x65\x72\x74'.decode(): 0, b'\x6d\x69\x73\x73\x69\x6c\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode(): 1, b'\x64\x72\x6f\x6e\x65\x5f\x61\x74\x74\x61\x63\x6b'.decode(): 2, b'\x64\x72\x6f\x6e\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode(): 3, b'\x63\x6c\x65\x61\x72'.decode(): 4}
 
-STATUS_PRIORITY = {
-    "missile_alert": 0,
-    "missile_danger": 1,
-    "drone_attack": 2,
-    "drone_danger": 3,
-    "clear": 4,
+_0O0O0O0O0O0O0O0O0O0O0O0O0O0O = {b'\xd0\x9c\xd0\xbe\xd1\x81\xd0\xba\xd0\xbe\xd0\xb2\xd1\x81\xd0\xba\xd0\xb0\xd1\x8f\x20\xd0\xbe\xd0\xb1\xd0\xbb\xd0\xb0\xd1\x81\xd1\x82\xd1\x8c'.decode(): b'\xd0\x9c\xd0\xbe\xd1\x81\xd0\xba\xd0\xbe\xd0\xb2\xd1\x81\xd0\xba\xd0\xb0\xd1\x8f\x20\xd0\xbe\xd0\xb1\xd0\xbb.'.decode(), b'\xd0\x9c\xd0\xbe\xd1\x81\xd0\xba\xd0\xb2\xd0\xb0'.decode(): b'\xd0\x9c\xd0\xbe\xd1\x81\xd0\xba\xd0\xb2\xd0\xb0'.decode(), b'\xd0\x9b\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xbd\xd0\xb3\xd1\x80\xd0\xb0\xd0\xb4\xd1\x81\xd0\xba\xd0\xb0\xd1\x8f\x20\xd0\xbe\xd0\xb1\xd0\xbb\xd0\xb0\xd1\x81\xd1\x82\xd1\x8c'.decode(): b'\xd0\x9b\xd0\xb5\xd0\xbd\xd0\xb8\xd0\xbd\xd0\xb3\xd1\x80\xd0\xb0\xd0\xb4\xd1\x81\xd0\xba\xd0\xb0\xd1\x8f\x20\xd0\xbe\xd0\xb1\xd0\xbb.'.decode(), b'\xd0\xa1\xd0\xb0\xd0\xbd\xd0\xba\xd1\x82-\xd0\x9f\xd0\xb5\xd1\x82\xd0\xb5\xd1\x80\xd0\xb1\xd1\x83\xd1\x80\xd0\xb3'.decode(): b'\xd0\xa1\xd0\xb0\xd0\xbd\xd0\xba\xd1\x82-\xd0\x9f\xd0\xb5\xd1\x82\xd0\xb5\xd1\x80\xd0\xb1\xd1\x83\xd1\x80\xd0\xb3'.decode()}
+
+_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = {b'\xd0\x94\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\xd0\xba\xd0\xb0\xd1\x8f\x20\xd0\x9d\xd0\xb0\xd1\x80\xd0\xbe\xd0\xb4\xd0\xbd\xd0\xb0\xd1\x8f\x20\xd0\xa0\xd0\xb5\xd1\x81\xd0\xbf\xd1\x83\xd0\xb1\xd0\xbb\xd0\xb8\xd0\xba\xd0\xb0'.decode(), b'\xd0\x9b\xd1\x83\xd0\xb3\xd0\xb0\xd0\xbd\xd1\x81\xd0\xba\xd0\xb0\xd1\x8f\x20\xd0\x9d\xd0\xb0\xd1\x80\xd0\xbe\xd0\xb4\xd0\xbd\xd0\xb0\xd1\x8f\x20\xd0\xa0\xd0\xb5\xd1\x81\xd0\xbf\xd1\x83\xd0\xb1\xd0\xbb\xd0\xb8\xd0\xba\xd0\xb0'.decode(), b'\xd0\x97\xd0\xb0\xd0\xbf\xd0\xbe\xd1\x80\xd0\xbe\xd0\xb6\xd1\x81\xd0\xba\xd0\xb0\xd1\x8f\x20\xd0\xbe\xd0\xb1\xd0\xbb\xd0\xb0\xd1\x81\xd1\x82\xd1\x8c'.decode(), b'\xd0\xa5\xd0\xb5\xd1\x80\xd1\x81\xd0\xbe\xd0\xbd\xd1\x81\xd0\xba\xd0\xb0\xd1\x8f\x20\xd0\xbe\xd0\xb1\xd0\xbb\xd0\xb0\xd1\x81\xd1\x82\xd1\x8c'.decode()}
+
+_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = {}
+_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = []
+_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = 0
+_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = 0
+_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = b'/tmp/radar_state.json'.decode()
+_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = None
+
+_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = {
+    b'\xd0\xba\xd0\xbe\xd1\x81\xd1\x82\xd1\x80\xd0\xbe\xd0\xbc\xd1\x81\xd0\xba\xd0\xbe\xd0\xb9'.decode(): b'\xd0\x9a\xd0\xbe\xd1\x81\xd1\x82\xd1\x80\xd0\xbe\xd0\xbc\xd1\x81\xd0\xba\xd0\xb0\xd1\x8f\x20\xd0\xbe\xd0\xb1\xd0\xbb\xd0\xb0\xd1\x81\xd1\x82\xd1\x8c'.decode(),
+    b'\xd0\xbc\xd0\xbe\xd1\x81\xd0\xba\xd0\xbe\xd0\xb2\xd1\x81\xd0\xba\xd0\xbe\xd0\xb9'.decode(): b'\xd0\x9c\xd0\xbe\xd1\x81\xd0\xba\xd0\xbe\xd0\xb2\xd1\x81\xd0\xba\xd0\xb0\xd1\x8f\x20\xd0\xbe\xd0\xb1\xd0\xbb\xd0\xb0\xd1\x81\xd1\x82\xd1\x8c'.decode(),
 }
 
-REGION_SHORT_NAMES = {
-    "Московская область": "Московская обл.",
-    "Москва": "Москва",
-    "Ленинградская область": "Ленинградская обл.",
-    "Санкт-Петербург": "Санкт-Петербург",
-    "Нижегородская область": "Нижегородская обл.",
-    "Ставропольский край": "Ставропольский край",
-    "Краснодарский край": "Краснодарский край",
-    "Чеченская Республика": "Чеченская Респ.",
-    "Республика Дагестан": "Респ. Дагестан",
-    "Республика Ингушетия": "Респ. Ингушетия",
-    "Республика Северная Осетия": "Респ. Сев. Осетия",
-    "Карачаево-Черкесская Республика": "Карачаево-Черкесия",
-    "Кабардино-Балкарская Республика": "Кабардино-Балкария",
-    "Республика Адыгея": "Респ. Адыгея",
-    "Республика Крым": "Респ. Крым",
-    "Запорожская область": "Запорожская обл.",
-    "Херсонская область": "Херсонская обл.",
-    "Донецкая Народная Республика": "ДНР",
-    "Луганская Народная Республика": "ЛНР",
-    "Астраханская область": "Астраханская обл.",
-    "Волгоградская область": "Волгоградская обл.",
-    "Белгородская область": "Белгородская обл.",
-    "Брянская область": "Брянская обл.",
-    "Воронежская область": "Воронежская обл.",
-    "Курская область": "Курская обл.",
-    "Ростовская область": "Ростовская обл.",
-    "Смоленская область": "Смоленская обл.",
-    "Тульская область": "Тульская обл.",
-    "Калужская область": "Калужская обл.",
-    "Рязанская область": "Рязанская обл.",
-    "Тверская область": "Тверская обл.",
-    "Ярославская область": "Ярославская обл.",
-    "Владимирская область": "Владимирская обл.",
-    "Ивановская область": "Ивановская обл.",
-    "Костромская область": "Костромская обл.",
-    "Тамбовская область": "Тамбовская обл.",
-    "Липецкая область": "Липецкая обл.",
-    "Орловская область": "Орловская обл.",
-    "Пензенская область": "Пензенская обл.",
-    "Саратовская область": "Саратовская обл.",
-    "Ульяновская область": "Ульяновская обл.",
-    "Самарская область": "Самарская обл.",
-    "Пермский край": "Пермский край",
-    "Республика Башкортостан": "Респ. Башкортостан",
-    "Республика Татарстан": "Респ. Татарстан",
-    "Республика Удмуртия": "Респ. Удмуртия",
-    "Республика Марий Эл": "Респ. Марий Эл",
-    "Республика Мордовия": "Респ. Мордовия",
-    "Чувашская Республика": "Чувашская Респ.",
-    "Кировская область": "Кировская обл.",
-    "Оренбургская область": "Оренбургская обл.",
-    "Челябинская область": "Челябинская обл.",
-    "Свердловская область": "Свердловская обл.",
-    "Курганская область": "Курганская обл.",
-    "Тюменская область": "Тюменская обл.",
-    "Омская область": "Омская обл.",
-    "Новосибирская область": "Новосибирская обл.",
-    "Томская область": "Томская обл.",
-    "Кемеровская область": "Кемеровская обл.",
-    "Алтайский край": "Алтайский край",
-    "Красноярский край": "Красноярский край",
-    "Иркутская область": "Иркутская обл.",
-    "Забайкальский край": "Забайкальский край",
-    "Республика Бурятия": "Респ. Бурятия",
-    "Приморский край": "Приморский край",
-    "Хабаровский край": "Хабаровский край",
-    "Амурская область": "Амурская обл.",
-    "Сахалинская область": "Сахалинская обл.",
-    "Камчатский край": "Камчатский край",
-    "Магаданская область": "Магаданская обл.",
-    "Республика Саха (Якутия)": "Респ. Саха (Якутия)",
-    "Еврейская АО": "Еврейская АО",
-    "Чукотский АО": "Чукотский АО",
-    "ЯНАО": "ЯНАО",
-    "Ханты-Мансийский АО": "ХМАО",
-    "Ненецкий АО": "Ненецкий АО",
-    "Республика Карелия": "Респ. Карелия",
-    "Республика Коми": "Респ. Коми",
-    "Архангельская область": "Архангельская обл.",
-    "Мурманская область": "Мурманская обл.",
-    "Вологодская область": "Вологодская обл.",
-    "Новгородская область": "Новгородская обл.",
-    "Псковская область": "Псковская обл.",
-    "Калининградская область": "Калининградская обл.",
-    "Республика Алтай": "Респ. Алтай",
-    "Республика Хакасия": "Респ. Хакасия",
-    "Республика Тыва": "Респ. Тыва",
-    "Республика Калмыкия": "Респ. Калмыкия",
-}
-
-last_summary = {"drone_danger": [], "drone_attack": [], "missile_danger": [], "missile_alert": [], "timestamp": None}
-
-REGION_ALIASES = {
-    "Московская область": "Московская область",
-    "Московский регион": "Московская область",
-    "Подмосковье": "Московская область",
-    "Москва": "Москва",
-    "г. Москва": "Москва",
-    "Тульская область": "Тульская область",
-    "Тула": "Тульская область",
-    "Калужская область": "Калужская область",
-    "Калуга": "Калужская область",
-    "Рязанская область": "Рязанская область",
-    "Рязань": "Рязанская область",
-    "Тверская область": "Тверская область",
-    "Тверь": "Тверская область",
-    "Воронежская область": "Воронежская область",
-    "Воронеж": "Воронежская область",
-    "Белгородская область": "Белгородская область",
-    "Белгород": "Белгородская область",
-    "Брянская область": "Брянская область",
-    "Брянск": "Брянская область",
-    "Курская область": "Курская область",
-    "Курск": "Курская область",
-    "Смоленская область": "Смоленская область",
-    "Смоленск": "Смоленская область",
-    "Орловская область": "Орловская область",
-    "Орёл": "Орловская область",
-    "Орел": "Орловская область",
-    "Липецкая область": "Липецкая область",
-    "Липецк": "Липецкая область",
-    "Тамбовская область": "Тамбовская область",
-    "Тамбов": "Тамбовская область",
-    "Владимирская область": "Владимирская область",
-    "Владимир": "Владимирская область",
-    "Ивановская область": "Ивановская область",
-    "Иваново": "Ивановская область",
-    "Ярославская область": "Ярославская область",
-    "Ярославль": "Ярославская область",
-    "Костромская область": "Костромская область",
-    "Кострома": "Костромская область",
-    "г. Санкт-Петербург": "Ленинградская область",
-    "Санкт-Петербург": "Ленинградская область",
-    "Ленинградская область": "Ленинградская область",
-    "Республика Карелия": "Республика Карелия",
-    "Архангельская область": "Архангельская область",
-    "Республика Коми": "Республика Коми",
-    "Ненецкий АО": "Ненецкий АО",
-    "Вологодская область": "Вологодская область",
-    "Вологда": "Вологодская область",
-    "Новгородская область": "Новгородская область",
-    "Псковская область": "Псковская область",
-    "Псков": "Псковская область",
-    "Нижегородская область": "Нижегородская область",
-    "Нижний Новгород": "Нижегородская область",
-    "Кировская область": "Кировская область",
-    "Киров": "Кировская область",
-    "Пензенская область": "Пензенская область",
-    "Пенза": "Пензенская область",
-    "Ульяновская область": "Ульяновская область",
-    "Ульяновск": "Ульяновская область",
-    "Саратовская область": "Саратовская область",
-    "Саратов": "Саратовская область",
-    "Пермский край": "Пермский край",
-    "Пермь": "Пермский край",
-    "Республика Удмуртия": "Республика Удмуртия",
-    "Республика Башкортостан": "Республика Башкортостан",
-    "Башкортостан": "Республика Башкортостан",
-    "Оренбургская область": "Оренбургская область",
-    "Самарская область": "Самарская область",
-    "Чувашская Республика": "Чувашская Республика",
-    "Чувашия": "Чувашская Республика",
-    "Республика Татарстан": "Республика Татарстан",
-    "Татарстан": "Республика Татарстан",
-    "Республика Марий Эл": "Республика Марий Эл",
-    "Марий Эл": "Республика Марий Эл",
-    "Республика Мордовия": "Республика Мордовия",
-    "Мордовия": "Республика Мордовия",
-    "Ставропольский край": "Ставропольский край",
-    "Ставрополь": "Ставропольский край",
-    "Невинномысск": "Ставропольский край",
-    "Краснодарский край": "Краснодарский край",
-    "Краснодар": "Краснодарский край",
-    "Причерноморье": "Краснодарский край",
-    "Причерноморье Краснодарского края": "Краснодарский край",
-    "Сочи": "Краснодарский край",
-    "Анапа": "Краснодарский край",
-    "Новороссийск": "Краснодарский край",
-    "Приморско-Ахтарск": "Краснодарский край",
-    "Ростовская область": "Ростовская область",
-    "Волгоградская область": "Волгоградская область",
-    "Волгоград": "Волгоградская область",
-    "Астраханская область": "Астраханская область",
-    "Астрахань": "Астраханская область",
-    "Республика Крым": "Республика Крым",
-    "Крым": "Республика Крым",
-    "Побережье Крыма": "Республика Крым",
-    "Крымский мост": "Республика Крым",
-    "Севастополь": "Республика Крым",
-    "Симферополь": "Республика Крым",
-    "Республика Адыгея": "Республика Адыгея",
-    "Адыгея": "Республика Адыгея",
-    "Республика Калмыкия": "Республика Калмыкия",
-    "Чеченская Республика": "Чеченская Республика",
-    "Грозный": "Чеченская Республика",
-    "Республика Дагестан": "Республика Дагестан",
-    "Дагестан": "Республика Дагестан",
-    "Махачкала": "Республика Дагестан",
-    "Каспийск": "Республика Дагестан",
-    "Республика Ингушетия": "Республика Ингушетия",
-    "Республика Северная Осетия": "Республика Северная Осетия",
-    "Владикавказ": "Республика Северная Осетия",
-    "Кабардино-Балкарская Республика": "Кабардино-Балкарская Республика",
-    "Карачаево-Черкесская Республика": "Карачаево-Черкесская Республика",
-    "Челябинская область": "Челябинская область",
-    "Челябинск": "Челябинская область",
-    "Свердловская область": "Свердловская область",
-    "Екатеринбург": "Свердловская область",
-    "Курганская область": "Курганская область",
-    "ЯНАО": "ЯНАО",
-    "Ямало-Ненецкий АО": "ЯНАО",
-    "Ханты-Мансийский АО - Югра": "Ханты-Мансийский АО",
-    "Тюменская область": "Тюменская область",
-    "Омская область": "Омская область",
-    "Томская область": "Томская область",
-    "Новосибирская область": "Новосибирская область",
-    "Алтайский край": "Алтайский край",
-    "Кемеровская область": "Кемеровская область",
-    "Республика Алтай": "Республика Алтай",
-    "Республика Хакасия": "Республика Хакасия",
-    "Республика Тыва": "Республика Тыва",
-    "Красноярский край": "Красноярский край",
-    "Республика Бурятия": "Республика Бурятия",
-    "Иркутская область": "Иркутская область",
-    "Забайкальский край": "Забайкальский край",
-    "Амурская область": "Амурская область",
-    "Республика Саха (Якутия)": "Республика Саха (Якутия)",
-    "Еврейская АО": "Еврейская АО",
-    "Приморский край": "Приморский край",
-    "Хабаровский край": "Хабаровский край",
-    "Сахалинская область": "Сахалинская область",
-    "Магаданская область": "Магаданская область",
-    "Камчатский край": "Камчатский край",
-    "Чукотский АО": "Чукотский АО",
-    "Донецкая Народная Республика": "Донецкая Народная Республика",
-    "Луганская Народная Республика": "Луганская Народная Республика",
-    "Запорожская область": "Запорожская область",
-    "Херсонская область": "Херсонская область",
-}
-
-ALLOWED_DPR_REGIONS = [
-    "Донецкая Народная Республика",
-    "Луганская Народная Республика",
-    "Запорожская область",
-    "Херсонская область"
-]
-
-region_statuses = {}
-alert_history = []
-last_msg_id_main = 0
-last_msg_id_dpr = 0
-PERSIST_FILE = "/tmp/radar_state.json"
-telegram_client = None
-
-GENITIVE_MAP = {
-    "костромской": "Костромская область",
-    "кировской": "Кировская область",
-    "московской": "Московская область",
-    "ленинградской": "Ленинградская область",
-    "нижегородской": "Нижегородская область",
-    "тульской": "Тульская область",
-    "калужской": "Калужская область",
-    "рязанской": "Рязанская область",
-    "тверской": "Тверская область",
-    "воронежской": "Воронежская область",
-    "белгородской": "Белгородская область",
-    "брянской": "Брянская область",
-    "курской": "Курская область",
-    "смоленской": "Смоленская область",
-    "орловской": "Орловская область",
-    "липецкой": "Липецкая область",
-    "тамбовской": "Тамбовская область",
-    "владимирской": "Владимирская область",
-    "ивановской": "Ивановская область",
-    "ярославской": "Ярославская область",
-    "вологодской": "Вологодская область",
-    "новгородской": "Новгородская область",
-    "псковской": "Псковская область",
-    "калининградской": "Калининградская область",
-    "пензенской": "Пензенская область",
-    "ульяновской": "Ульяновская область",
-    "саратовской": "Саратовская область",
-    "самарской": "Самарская область",
-    "оренбургской": "Оренбургская область",
-    "челябинской": "Челябинская область",
-    "свердловской": "Свердловская область",
-    "курганской": "Курганская область",
-    "тюменской": "Тюменская область",
-    "омской": "Омская область",
-    "томской": "Томская область",
-    "новосибирской": "Новосибирская область",
-    "кемеровской": "Кемеровская область",
-    "иркутской": "Иркутская область",
-    "амурской": "Амурская область",
-    "сахалинской": "Сахалинская область",
-    "магаданской": "Магаданская область",
-    "мурманской": "Мурманская область",
-    "архангельской": "Архангельская область",
-    "астраханской": "Астраханская область",
-    "волгоградской": "Волгоградская область",
-    "ростовской": "Ростовская область",
-    "запорожской": "Запорожская область",
-    "херсонской": "Херсонская область",
-}
-
-def expire_old_statuses():
-    global region_statuses, last_summary
-    now = datetime.now(timezone.utc)
-    expiry_time = now - timedelta(hours=STATUS_EXPIRY_HOURS)
-    expired_count = 0
-    changed = False
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0():
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = D.now(TZ.utc)
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 - TD(hours=_0O0O0O0O0O0O0O0O0O0O0O0O0O0O)
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = 0
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = False
     
-    for region, data in list(region_statuses.items()):
-        last_update_str = data.get("last_update")
-        if not last_update_str:
+    for _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0, _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O in list(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.items()):
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.get(b'\x6c\x61\x73\x74\x5f\x75\x70\x64\x61\x74\x65'.decode())
+        if not _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0:
             continue
         
         try:
-            last_update = datetime.fromisoformat(last_update_str)
-            if last_update.tzinfo is None:
-                last_update = last_update.replace(tzinfo=timezone.utc)
+            _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = D.fromisoformat(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0)
+            if _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.tzinfo is None:
+                _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.replace(tzinfo=TZ.utc)
             
-            if last_update < expiry_time and data.get("status") != "clear":
-                region_statuses[region] = {
-                    "status": "clear",
-                    "last_update": now.isoformat(),
-                    "message": f"Автоматический отбой (нет обновлений >{STATUS_EXPIRY_HOURS}ч)",
-                    "source": data.get("source", "system")
+            if _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O < _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O and _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.get(b'\x73\x74\x61\x74\x75\x73'.decode()) != b'\x63\x6c\x65\x61\x72'.decode():
+                _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O[_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O] = {
+                    b'\x73\x74\x61\x74\x75\x73'.decode(): b'\x63\x6c\x65\x61\x72'.decode(),
+                    b'\x6c\x61\x73\x74\x5f\x75\x70\x64\x61\x74\x65'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.isoformat(),
+                    b'\x6d\x65\x73\x73\x61\x67\x65'.decode(): b'\xd0\x90\xd0\xb2\xd1\x82\xd0\xbe\xd0\xbc\xd0\xb0\xd1\x82\xd0\xb8\xd1\x87\xd0\xb5\xd1\x81\xd0\xba\xd0\xb8\xd0\xb9\x20\xd0\xbe\xd1\x82\xd0\xb1\xd0\xbe\xd0\xb9'.decode(),
+                    b'\x73\x6f\x75\x72\x63\x65'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.get(b'\x73\x6f\x75\x72\x63\x65'.decode(), b'\x73\x79\x73\x74\x65\x6d'.decode())
                 }
-                expired_count += 1
-                changed = True
-                print(f"  ⏰ {region}: статус устарел → clear")
+                _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 += 1
+                _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = True
         except Exception as e:
-            print(f"  ⚠️ Ошибка парсинга даты для {region}: {e}")
+            pass
     
-    if expired_count > 0:
-        print(f"✅ Устарело {expired_count} регионов (автоматический отбой)")
-        last_summary = {"drone_danger": [], "drone_attack": [], "missile_danger": [], "missile_alert": [], "timestamp": None}
-        save_state()
+    if _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 > 0:
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = {b'\x64\x72\x6f\x6e\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode(): [], b'\x64\x72\x6f\x6e\x65\x5f\x61\x74\x74\x61\x63\x6b'.decode(): [], b'\x6d\x69\x73\x73\x69\x6c\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode(): [], b'\x6d\x69\x73\x73\x69\x6c\x65\x5f\x61\x6c\x65\x72\x74'.decode(): [], b'\x74\x69\x6d\x65\x73\x74\x61\x6d\x70'.decode(): None}
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0()
     
-    return changed
+    return _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O
 
-def clear_status_by_type(status_type, source="system"):
-    global region_statuses, last_summary
-    now = datetime.now(timezone.utc).isoformat()
-    cleared_count = 0
-    
-    status_names = {
-        "drone_danger": "опасность БПЛА",
-        "missile_danger": "ракетная опасность",
-        "missile_alert": "ракетная тревога",
-        "drone_attack": "атака БПЛА"
-    }
-    
-    for region, data in list(region_statuses.items()):
-        if data.get("status") == status_type:
-            region_statuses[region] = {
-                "status": "clear",
-                "last_update": now,
-                "message": f"Отбой {status_names.get(status_type, status_type)} по всем регионам",
-                "source": source
-            }
-            cleared_count += 1
-            print(f"  🚫 {region}: отбой {status_names.get(status_type, status_type)} → clear")
-    
-    if cleared_count > 0:
-        print(f"✅ Отбой {status_names.get(status_type, status_type)}: сброшено {cleared_count} регионов")
-        last_summary = {"drone_danger": [], "drone_attack": [], "missile_danger": [], "missile_alert": [], "timestamp": None}
-        save_state()
-    
-    return cleared_count > 0
-
-def save_state():
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0():
     try:
-        state = {
-            "region_statuses": region_statuses,
-            "alert_history": alert_history[-2000:],
-            "last_msg_id_main": last_msg_id_main,
-            "last_msg_id_dpr": last_msg_id_dpr,
-            "saved_at": datetime.now(timezone.utc).isoformat(),
-            "last_summary": last_summary
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = {
+            b'\x72\x65\x67\x69\x6f\x6e\x5f\x73\x74\x61\x74\x75\x73\x65\x73'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O,
+            b'\x61\x6c\x65\x72\x74\x5f\x68\x69\x73\x74\x6f\x72\x79'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O[-2000:],
+            b'\x6c\x61\x73\x74\x5f\x6d\x73\x67\x5f\x69\x64\x5f\x6d\x61\x69\x6e'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O,
+            b'\x6c\x61\x73\x74\x5f\x6d\x73\x67\x5f\x69\x64\x5f\x64\x70\x72'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O,
+            b'\x73\x61\x76\x65\x64\x5f\x61\x74'.decode(): D.now(TZ.utc).isoformat(),
+            b'\x6c\x61\x73\x74\x5f\x73\x75\x6d\x6d\x61\x72\x79'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0
         }
-        with open(PERSIST_FILE, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False)
-        print(f"❤️ State saved ({len(alert_history)} records)")
+        with open(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0, b'\x77'.decode(), encoding=b'\x75\x74\x66\x2d\x38'.decode()) as f:
+            J.dump(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, f, ensure_ascii=False)
     except Exception as e:
-        print(f"❌ Save error: {e}")
+        pass
 
-def load_state():
-    global region_statuses, alert_history, last_msg_id_main, last_msg_id_dpr, last_summary
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0():
+    global _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0
     try:
-        if not os.path.exists(PERSIST_FILE):
-            print("ℹ️ No state file found")
+        if not O.path.exists(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0):
             return
-        with open(PERSIST_FILE, "r", encoding="utf-8") as f:
-            state = json.load(f)
-        saved_at = state.get("saved_at", "")
-        if saved_at:
-            age = datetime.now(timezone.utc) - datetime.fromisoformat(saved_at)
-            if age.total_seconds() > 48 * 3600:
-                print(f"ℹ️ State too old ({age}), skipping")
-                return
-        region_statuses = state.get("region_statuses", {})
-        alert_history = state.get("alert_history", [])
-        last_msg_id_main = state.get("last_msg_id_main", 0)
-        last_msg_id_dpr = state.get("last_msg_id_dpr", 0)
-        saved_summary = state.get("last_summary")
-        if saved_summary:
-            last_summary = saved_summary
-        print(f"✅ State loaded: {len(region_statuses)} regions, {len(alert_history)} history records")
+        with open(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0, b'\x72'.decode(), encoding=b'\x75\x74\x66\x2d\x38'.decode()) as f:
+            _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = J.load(f)
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.get(b'\x72\x65\x67\x69\x6f\x6e\x5f\x73\x74\x61\x74\x75\x73\x65\x73'.decode(), {})
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.get(b'\x61\x6c\x65\x72\x74\x5f\x68\x69\x73\x74\x6f\x72\x79'.decode(), [])
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.get(b'\x6c\x61\x73\x74\x5f\x6d\x73\x67\x5f\x69\x64\x5f\x6d\x61\x69\x6e'.decode(), 0)
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.get(b'\x6c\x61\x73\x74\x5f\x6d\x73\x67\x5f\x69\x64\x5f\x64\x70\x72'.decode(), 0)
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.get(b'\x6c\x61\x73\x74\x5f\x73\x75\x6d\x6d\x61\x72\x79'.decode(), {b'\x64\x72\x6f\x6e\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode(): [], b'\x64\x72\x6f\x6e\x65\x5f\x61\x74\x74\x61\x63\x6b'.decode(): [], b'\x6d\x69\x73\x73\x69\x6c\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode(): [], b'\x6d\x69\x73\x73\x69\x6c\x65\x5f\x61\x6c\x65\x72\x74'.decode(): [], b'\x74\x69\x6d\x65\x73\x74\x61\x6d\x70'.decode(): None})
     except Exception as e:
-        print(f"❌ Load error: {e}")
+        pass
 
-def get_short_name(region):
-    return REGION_SHORT_NAMES.get(region, region)
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0():
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = []
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = []
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = []
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = []
 
-def format_summary(regions):
-    drone_danger = []
-    drone_attack = []
-    missile_danger = []
-    missile_alert = []
-
-    for region, data in regions.items():
-        status = data.get("status")
-        if not status or status == "clear":
+    for _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 in _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.items():
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0.get(b'\x73\x74\x61\x74\x75\x73'.decode())
+        if not _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O or _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O == b'\x63\x6c\x65\x61\x72'.decode():
             continue
         
-        short_name = get_short_name(region)
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0.get(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O)
         
-        if status == "drone_danger":
-            drone_danger.append(f"    • {short_name}")
-        elif status == "drone_attack":
-            drone_attack.append(f"    • {short_name}")
-        elif status == "missile_danger":
-            missile_danger.append(f"    • {short_name}")
-        elif status == "missile_alert":
-            missile_alert.append(f"    • {short_name}")
+        if _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O == b'\x64\x72\x6f\x6e\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode():
+            _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.append(f"    • {_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0}")
+        elif _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O == b'\x64\x72\x6f\x6e\x65\x5f\x61\x74\x74\x61\x63\x6b'.decode():
+            _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0.append(f"    • {_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0}")
+        elif _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O == b'\x6d\x69\x73\x73\x69\x6c\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode():
+            _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.append(f"    • {_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0}")
+        elif _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O == b'\x6d\x69\x73\x73\x69\x6c\x65\x5f\x61\x6c\x65\x72\x74'.decode():
+            _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0.append(f"    • {_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0}")
 
-    drone_danger.sort()
-    drone_attack.sort()
-    missile_danger.sort()
-    missile_alert.sort()
-
-    global last_summary
-    current = {
-        "drone_danger": drone_danger,
-        "drone_attack": drone_attack,
-        "missile_danger": missile_danger,
-        "missile_alert": missile_alert
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = {
+        b'\x64\x72\x6f\x6e\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O,
+        b'\x64\x72\x6f\x6e\x65\x5f\x61\x74\x74\x61\x63\x6b'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0,
+        b'\x6d\x69\x73\x73\x69\x6c\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O,
+        b'\x6d\x69\x73\x73\x69\x6c\x65\x5f\x61\x6c\x65\x72\x74'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0
     }
     
-    if (last_summary.get("drone_danger") == drone_danger and
-        last_summary.get("drone_attack") == drone_attack and
-        last_summary.get("missile_danger") == missile_danger and
-        last_summary.get("missile_alert") == missile_alert):
+    if (_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0.get(b'\x64\x72\x6f\x6e\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode()) == _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O and
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0.get(b'\x64\x72\x6f\x6e\x65\x5f\x61\x74\x74\x61\x63\x6b'.decode()) == _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 and
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0.get(b'\x6d\x69\x73\x73\x69\x6c\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode()) == _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O and
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0.get(b'\x6d\x69\x73\x73\x69\x6c\x65\x5f\x61\x6c\x65\x72\x74'.decode()) == _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0):
         return None
 
-    last_summary = current
-    last_summary["timestamp"] = datetime.now(timezone.utc)
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0[b'\x74\x69\x6d\x65\x73\x74\x61\x6d\x70'.decode()] = D.now(TZ.utc)
 
-    now = datetime.now(timezone.utc) + timedelta(hours=3)
-    time_str = now.strftime("%H:%M | %d/%m")
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = D.now(TZ.utc) + TD(hours=3)
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.strftime(b'\x25\x48\x3a\x25\x4d\x20\x7c\x20\x25\x64\x2f\x25\x6d'.decode())
 
-    message = f"✈️ *Воздушная тревога* 🚀\n`{time_str}`\n\n"
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = f"\u2708\ufe0f *\u0412\u043e\u0437\u0434\u0443\u0448\u043d\u0430\u044f \u0442\u0440\u0435\u0432\u043e\u0433\u0430* \ud83d\ude80\n`{_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0}`\n\n"
     
-    active_alerts = []
-    active_alerts.extend(missile_alert)
-    active_alerts.extend(missile_danger)
-    active_alerts.extend(drone_attack)
-    
-    message += "🔴 *АКТИВНАЯ ТРЕВОГА*\n"
-    if active_alerts:
-        message += "\n".join(active_alerts) + "\n\n"
-    else:
-        message += "    • Отсутствует\n\n"
-    
-    message += "🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ*\n"
-    if drone_danger:
-        message += "\n".join(drone_danger) + "\n\n"
-    else:
-        message += "    • Отсутствует\n\n"
-    
-    message += "---\n📍 [Карта тревог](https://olegmmg.github.io/Radar/)"
-    message += "\n📍 [TG Радар Россия](https://t.me/RadarMapRf)"
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O += b'\xf0\x9f\x94\xb4 *\xd0\x90\xd0\x9a\xd0\xa2\xd0\x98\xd0\x92\xd0\x9d\xd0\x90\xd0\xaf \xd0\xa2\xd0\xa0\xd0\x95\xd0\x92\xd0\x9e\xd0\x93\xd0\x90*\n'.decode()
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O += b'\xe2\x80\xa2 \xd0\x9e\xd1\x82\xd1\x81\xd1\x83\xd1\x82\xd1\x81\xd1\x82\xd0\xb2\xd1\x83\xd0\xb5\xd1\x82\n'.decode()
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O += b'\n---\n\xf0\x9f\x93\x8d [\xd0\x9a\xd0\xb0\xd1\x80\xd1\x82\xd0\xb0 \xd1\x82\xd1\x80\xd0\xb5\xd0\xb2\xd0\xbe\xd0\xb3](https://olegmmg.github.io/Radar/)\n\xf0\x9f\x93\x8d [TG \xd0\xa0\xd0\xb0\xd0\xb4\xd0\xb0\xd1\x80 \xd0\xa0\xd0\xbe\xd1\x81\xd1\x81\xd0\xb8\xd1\x8f](https://t.me/RadarMapRf)'.decode()
 
-    return message
+    return _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O
 
-async def send_report(client, force=False):
-    if not region_statuses:
-        print("⚠️ Нет данных о регионах, сводка не отправлена")
-        return
-    
-    summary = format_summary(region_statuses)
-    if summary is None and not force:
-        print("ℹ️ Сводка не изменилась, пропускаем")
-        return
-    
-    if summary is None and force:
-        if last_summary and last_summary.get("timestamp"):
-            now = datetime.now(timezone.utc) + timedelta(hours=3)
-            time_str = now.strftime("%H:%M | %d/%m")
-            summary = f"✈️ *Воздушная тревога* 🚀\n`{time_str}`\n\n"
-            
-            active_alerts = []
-            active_alerts.extend(last_summary.get("missile_alert", []))
-            active_alerts.extend(last_summary.get("missile_danger", []))
-            active_alerts.extend(last_summary.get("drone_attack", []))
-            
-            summary += "🔴 *АКТИВНАЯ ТРЕВОГА*\n"
-            if active_alerts:
-                summary += "\n".join(active_alerts) + "\n\n"
-            else:
-                summary += "    • Отсутствует\n\n"
-            
-            summary += "🟡 *ПОТЕНЦИАЛЬНАЯ ОПАСНОСТЬ*\n"
-            if last_summary.get("drone_danger", []):
-                summary += "\n".join(last_summary.get("drone_danger", [])) + "\n\n"
-            else:
-                summary += "    • Отсутствует\n\n"
-            
-            summary += "---\n📍 [Карта тревог](https://olegmmg.github.io/Radar/)"
-            summary += "\n📍 [TG Радар Россия](https://t.me/RadarMapRf)"
-        else:
-            print("ℹ️ Нет данных для форсированной отправки")
-            return
-    
-    try:
-        entity = await client.get_entity(REPORT_CHANNEL)
-        await client.send_message(entity, summary, link_preview=False)
-        print(f"📢 Отправлена сводка в @{REPORT_CHANNEL}" + (" (форсированно)" if force else ""))
-    except FloodWaitError as e:
-        print(f"⏳ Flood wait {e.seconds} секунд")
-        await asyncio.sleep(e.seconds)
-    except Exception as e:
-        print(f"❌ Ошибка отправки сводки: {e}")
+@_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0.route(b'\x2f\x61\x70\x69\x2f\x73\x74\x61\x74\x75\x73\x65\x73'.decode())
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0():
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = {b'\x72\x65\x67\x69\x6f\x6e\x73'.decode(): {}, b'\x6c\x61\x73\x74\x5f\x75\x70\x64\x61\x74\x65\x64'.decode(): D.now(TZ.utc).isoformat()}
+    for _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0, _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O in _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.items():
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = 0
+        for _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 in reversed(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O[-5000:]):
+            if _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0[b'\x72\x65\x67\x69\x6f\x6e'.decode()] == _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O:
+                try:
+                    if D.fromisoformat(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0[b'\x74\x69\x6d\x65\x73\x74\x61\x6d\x70'.decode()]) > D.now(TZ.utc) - TD(hours=24):
+                        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O += 1
+                except:
+                    pass
+        _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O[b'\x72\x65\x67\x69\x6f\x6e\x73'.decode()][_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O] = {
+            b'\x73\x74\x61\x74\x75\x73'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.get(b'\x73\x74\x61\x74\x75\x73'.decode()),
+            b'\x6c\x61\x73\x74\x5f\x75\x70\x64\x61\x74\x65'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.get(b'\x6c\x61\x73\x74\x5f\x75\x70\x64\x61\x74\x65'.decode()),
+            b'\x6d\x65\x73\x73\x61\x67\x65'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.get(b'\x6d\x65\x73\x73\x61\x67\x65'.decode(), b''.decode()),
+            b'\x61\x6c\x65\x72\x74\x73\x5f\x6c\x61\x73\x74\x5f\x68\x6f\x75\x72'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O,
+            b'\x73\x6f\x75\x72\x63\x65'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.get(b'\x73\x6f\x75\x72\x63\x65'.decode(), b'\x75\x6e\x6b\x6e\x6f\x77\x6e'.decode())
+        }
+    return Jf(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O)
 
-def clean_message_for_frontend(msg):
-    if not msg:
-        return ''
-    ad_phrases = [
-        r'❗️Радар по всей России\s*-\s*@radarrussiia\s*\n?',
-        r'🌐 Обход белых списков\s*-\s*@Internet_Boost_bot\s*\([^)]+\)\s*\n?',
-        r'@radarrussiia\s*\n?',
-        r'@Internet_Boost_bot\s*\n?',
-        r'https?://t\.me/Internet_Boost_bot\S*\s*\n?',
-        r'Радар по всей России.*?\n',
-        r'Обход белых списков.*?\n',
-        r'🔴 Радар ДНР.*?\n?',
-        r'📢 Оповещения Радар ДНР:\s*',
-    ]
-    cleaned = msg
-    for pattern in ad_phrases:
-        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE | re.MULTILINE)
-    cleaned = re.sub(r'\n\s*\n', '\n', cleaned).strip()
-    return cleaned
+@_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0.route(b'\x2f\x61\x70\x69\x2f\x72\x65\x63\x65\x6e\x74\x5f\x61\x6c\x65\x72\x74\x73'.decode())
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0():
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = list(reversed(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O[-100:]))[:50]
+    return Jf({b'\x61\x6c\x65\x72\x74\x73'.decode(): _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, b'\x74\x6f\x74\x61\x6c'.decode(): len(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O), b'\x6c\x61\x73\x74\x5f\x75\x70\x64\x61\x74\x65\x64'.decode(): D.now(TZ.utc).isoformat()})
 
-def is_pure_ad_message(text):
-    if not text:
-        return False
-    if "Радар ДНР" in text:
+@_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0.route(b'\x2f'.decode())
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O():
+    return Jf({b'\x73\x74\x61\x74\x75\x73'.decode(): b'\x6f\x6b'.decode(), b'\x65\x6e\x64\x70\x6f\x69\x6e\x74\x73'.decode(): [b'\x2f\x61\x70\x69\x2f\x73\x74\x61\x74\x75\x73\x65\x73'.decode(), b'\x2f\x61\x70\x69\x2f\x72\x65\x63\x65\x6e\x74\x5f\x61\x6c\x65\x72\x74\x73'.decode()], b'\x72\x65\x67\x69\x6f\x6e\x73\x5f\x63\x6f\x75\x6e\x74'.decode(): len(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O), b'\x6c\x61\x73\x74\x5f\x75\x70\x64\x61\x74\x65'.decode(): D.now(TZ.utc).isoformat()})
+
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0():
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = int(O.environ.get(b'\x50\x4f\x52\x54'.decode(), 5000))
+    while True:
+        I.sleep(240)
+        try:
+            Q.get(f"http://localhost:{_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O}/api/statuses", timeout=10)
+        except:
+            pass
+
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O():
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = int(O.environ.get(b'\x50\x4f\x52\x54'.decode(), 5000))
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0.run(host=b'\x30\x2e\x30\x2e\x30\x2e\x30'.decode(), port=_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0, debug=False, use_reloader=False)
+
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O():
+    while True:
+        I.sleep(60)
+        if _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O:
+            _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0()
+
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O):
+    if not _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0:
         return False
     
-    ad_indicators = [
-        "❗️ВНИМАНИЕ",
-        "Враг планирует",
-        "Впервые регионы РФ подверглись массовым РАКЕТНЫМ атакам",
-        "создать телеграм каналы для оповещения граждан",
-        "Ищите свой регион и подписывайтесь",
-        "НЕ БУДУТ БЛОКИРОВАТЬ",
-        "Нет вашего региона",
-        "вакансия без опыта",
-        "Пятёрочка ищет людей",
-        "платят от",
-        "АВАНС",
-        "Удалять негативные отзывы",
-        "Ставить лайки под роликами",
-        "Сравнивать цены",
-        "24/7 (https://t.me/",
-        "Москва 24/7",
-        "Питер 24/7",
-        "Подписывайтесь",
-        "будет автоматически выдан АВАНС"
-    ]
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O
+    if b'\xd0\xa0\xd0\xb0\xd0\xb4\xd0\xb0\xd1\x80 \xd0\x94\xd0\x9d\xd0\xa0'.decode() in _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O:
+        return False
     
-    text_upper = text.upper()
-    for indicator in ad_indicators:
-        if indicator.upper() in text_upper:
-            return True
-    
-    link_count = len(re.findall(r'https?://t\.me/', text))
-    if link_count > 3:
-        return True
-    
-    cleaned = clean_message_for_frontend(text)
-    return not cleaned or len(cleaned) < 15
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = R.compile(b'\xd0\xa0\xd0\xb0\xd0\xb4\xd0\xb0\xd1\x80 \xd0\xbf\xd0\xbe \xd0\xb2\xd1\x81\xd0\xb5\xd0\xb9 \xd0\xa0\xd0\xbe\xd1\x81\xd1\x81\xd0\xb8\xd0\xb8 - @radarrussiia\\s*\\n?'.decode(), R.IGNORECASE)
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.sub(b''.decode(), _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O)
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = R.sub(b'\r?\n\\s*\n'.decode(), b'\n'.decode(), _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0).strip()
+    return _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0
 
-def is_superseded_by_later(text):
-    return bool(re.search(r"с \d{1,2}:\d{2} до \d{1,2}:\d{2}.*уничтожено", text, re.IGNORECASE))
-
-def extract_regions(text):
-    """
-    Извлекает регионы из текста сообщения.
-    ИСПРАВЛЕНО: Использует строгое сопоставление по GENITIVE_MAP для родительного падежа,
-    чтобы "костромской" не матчился с "омской".
-    """
-    text_lower = text.lower()
-    found = set()
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O():
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0 = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O().lower()
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = set()
     
-    region_blacklist = set()
-
-    for alias, norm in REGION_ALIASES.items():
-        alias_lower = alias.lower()
-        if re.search(rf'{re.escape(alias_lower)}(?:ский|ская|ское|ской|ского|скому|ским|ском)?\s+район', text_lower):
-            region_blacklist.add(norm)
-            print(f"  ⚠️ Игнорируем {norm} (обнаружено 'район' рядом с названием)")
-        short_name = norm.replace(" область", "").replace(" край", "").replace(" Республика", "").replace(" республика", "")
-        short_name_lower = short_name.lower()
-        if len(short_name_lower) > 3:
-            if re.search(rf'{re.escape(short_name_lower)}(?:ский|ская|ское|ской|ского|скому|ским|ском)?\s+район', text_lower):
-                region_blacklist.add(norm)
-                print(f"  ⚠️ Игнорируем {norm} (обнаружено '{short_name}ский район')")
+    for _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0, _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O in _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.items():
+        if _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O in _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0:
+            _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.add(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O)
     
+    return list(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O)
 
-    genitive_matches = re.findall(r'([А-Яа-яёЁ]+(?:ской|ской))\s+области', text_lower)
-    for region_name in genitive_matches:
-        region_lower = region_name.lower()
-        if region_lower in GENITIVE_MAP:
-            norm = GENITIVE_MAP[region_lower]
-            if norm not in region_blacklist:
-                found.add(norm)
-                print(f"  🔍 Найден регион (род. падеж, точное совпадение): {region_name} -> {norm}")
-        else:
-            for alias, norm in REGION_ALIASES.items():
-                alias_lower = alias.lower()
-                if alias_lower.startswith(region_lower) or region_lower in alias_lower:
-                    if norm not in region_blacklist:
-                        found.add(norm)
-                        print(f"  🔍 Найден регион (род. падеж, alias): {region_name} -> {norm}")
-                    break
+def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O):
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.lower()
     
-    nominative_matches = re.findall(r'([А-Яа-яёЁ]+(?:ская|ская))\s+область', text_lower)
-    for region_name in nominative_matches:
-        for alias, norm in REGION_ALIASES.items():
-            if region_name in alias.lower():
-                if norm not in region_blacklist:
-                    found.add(norm)
-                    print(f"  🔍 Найден регион (им. падеж): {region_name} -> {norm}")
-                break
+    if b'\xd0\xbe\xd1\x82\xd0\xb1\xd0\xbe\xd0\xb9 \xd0\xbe\xd0\xbf\xd0\xb0\xd1\x81\xd0\xbd\xd0\xbe\xd1\x81\xd1\x82\xd0\xb8 \xd0\xb1\xd0\xbf\xd0\xbb\xd0\xb0 \xd0\xbf\xd0\xbe \xd0\xb2\xd1\x81\xd0\xb5\xd0\xbc \xd1\x80\xd0\xb0\xd0\xbd\xd0\xb5\xd0\xb5 \xd0\xbe\xd0\xb1\xd1\x8a\xd1\x8f\xd0\xb2\xd0\xbb\xd0\xb5\xd0\xbd\xd0\xbd\xd1\x8b\xd0\xbc \xd1\x80\xd0\xb5\xd0\xb3\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xb0\xd0\xbc'.decode() in _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O:
+        return b'\x6d\x61\x73\x73\x5f\x63\x6c\x65\x61\x72\x5f\x64\x72\x6f\x6e\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode()
     
-    krai_matches = re.findall(r'([А-Яа-яёЁ]+(?:ский|ский))\s+край', text_lower)
-    for region_name in krai_matches:
-        for alias, norm in REGION_ALIASES.items():
-            if region_name in alias.lower():
-                if norm not in region_blacklist:
-                    found.add(norm)
-                    print(f"  🔍 Найден край: {region_name} -> {norm}")
-                break
+    if b'\xd0\xbe\xd1\x82\xd0\xb1\xd0\xbe\xd0\xb9 \xd1\x80\xd0\xb0\xd0\xba\xd0\xb5\xd1\x82\xd0\xbd\xd0\xbe\xd0\xb9 \xd0\xbe\xd0\xbf\xd0\xb0\xd1\x81\xd0\xbd\xd0\xbe\xd1\x81\xd1\x82\xd0\xb8 \xd0\xbf\xd0\xbe \xd0\xb2\xd1\x81\xd0\xb5\xd0\xbc \xd1\x80\xd0\xb0\xd0\xbd\xd0\xb5\xd0\xb5 \xd0\xbe\xd0\xb1\xd1\x8a\xd1\x8f\xd0\xb2\xd0\xbb\xd0\xb5\xd0\xbd\xd0\xbd\xd1\x8b\xd0\xbc \xd1\x80\xd0\xb5\xd0\xb3\xd0\xb8\xd0\xbe\xd0\xbd\xd0\xb0\xd0\xbc'.decode() in _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O:
+        return b'\x6d\x61\x73\x73\x5f\x63\x6c\x65\x61\x72\x5f\x6d\x69\x73\x73\x69\x6c\x65\x5f\x64\x61\x6e\x67\x65\x72'.decode()
     
-    republic_matches = re.findall(r'(?:республика|республики)\s+([А-Яа-яёЁ][а-яёЁ]+(?:ская|ская)?)', text_lower)
-    for region_name in republic_matches:
-        for alias, norm in REGION_ALIASES.items():
-            if region_name in alias.lower() or region_name in norm.lower():
-                if norm not in region_blacklist:
-                    found.add(norm)
-                    print(f"  🔍 Найдена республика: {region_name} -> {norm}")
-                break
-    
-    direct_republics = [
-        "башкортостан", "чувашия", "татарстан", "удмуртия", 
-        "марий эл", "мордовия", "карелия", "коми", "адыгея",
-        "калмыкия", "алтай", "хакасия", "тыва", "бурятия", "саха"
-    ]
-    for rep in direct_republics:
-        if rep in text_lower:
-            for alias, norm in REGION_ALIASES.items():
-                if rep in alias.lower() or rep in norm.lower():
-                    if norm not in region_blacklist:
-                        found.add(norm)
-                        print(f"  🔍 Найдена республика по прямому названию: {rep} -> {norm}")
-                    break
-    
-    for alias, norm in REGION_ALIASES.items():
-        if alias.lower() in text_lower:
-            if norm not in region_blacklist:
-                found.add(norm)
-    
-    if "Донецкая Народная Республика" not in region_blacklist:
-        if re.search(r'\b(днр|dnr|донецк|горловка|макеевка|енакиево)\b', text_lower):
-            found.add("Донецкая Народная Республика")
-    if "Луганская Народная Республика" not in region_blacklist:
-        if re.search(r'\b(лнр|lnr|луганск|алчевск|брянка)\b', text_lower):
-            found.add("Луганская Народная Республика")
-    if "Запорожская область" not in region_blacklist:
-        if re.search(r'запорожск|zaporizh', text_lower):
-            found.add("Запорожская область")
-    if "Херсонская область" not in region_blacklist:
-        if re.search(r'херсон|kherson', text_lower):
-            found.add("Херсонская область")
-    
-    return list(found)
-
-def detect_status(text):
-    t = text.lower()
-
-    if "отбой опасности бпла по всем ранее объявленным регионам" in t:
-        return "mass_clear_drone_danger"
-    
-    if "отбой ракетной опасности по всем ранее объявленным регионам" in t:
-        return "mass_clear_missile_danger"
-    
-    if "отбой ракетной тревоги по всем ранее объявленным регионам" in t:
-        return "mass_clear_missile_alert"
-
-    if any(w in t for w in [
-        "отбой", "отбой опасности", "отбой по бпла", "отбой ракетной опасности",
-        "отбой авиационной", "отбой фиксации", "отбой по пкр", "отбой по бэк",
-        "все спокойно", "тихо", "обстановка спокойная"
-    ]):
-        return "clear"
-
-    if "ложная цель" in t:
-        return None
-
-    if any(w in t for w in [
-        "ракетная тревога", "ракетной тревоги", "тревога по пкр", "тревога по бэк",
-        "ракетно бомбовая опасность", "авиационная ракетная", "авиационная ракетная бомбовая опасность"
-    ]):
-        return "missile_alert"
-
-    if any(w in t for w in [
-        "ракетная опасность", "ракетной опасности", "опасность по пкр", "опасность по бэк"
-    ]):
-        return "missile_danger"
-
-    if any(w in t for w in [
-        "работа пво", "сбитие", "сбития", "фиксация бпла", "фиксации бпла",
-        "группа бпла", "группы бпла", "тревога по бпла", "атака бпла", "атакуют",
-        "много бпла", "волна бпла", "фиксация групп", "идут сбития", "массовый запуск"
-    ]):
-        return "drone_attack"
-
-    if any(w in t for w in [
-        "опасность по бпла", "угроза атаки", "внимание по бпла", "меры безопасности",
-        "опасность сохраняется", "повторно", "fpv", "fpv-дронам",
-        "единичных бпла", "внимание"
-    ]):
-        return "drone_danger"
-
     return None
 
-def process_message(text, msg_id=None, source="main", msg_date=None, is_history=False):
-    global region_statuses, alert_history
-
-    if not text:
-        return False
-
-    if source == "main" and is_pure_ad_message(text):
-        print(f"  🚫 Рекламное сообщение пропущено: {text[:50]}...")
-        return False
-
-    if is_superseded_by_later(text):
-        return False
-
-    status = detect_status(text)
+async def _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0():
+    global _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O
     
-    if status and status.startswith("mass_clear_"):
-        if status == "mass_clear_drone_danger":
-            updated = clear_status_by_type("drone_danger", source)
-        elif status == "mass_clear_missile_danger":
-            updated = clear_status_by_type("missile_danger", source)
-        elif status == "mass_clear_missile_alert":
-            updated = clear_status_by_type("missile_alert", source)
-        
-        if updated and not is_history:
-            alert_history.append({
-                "region": "ВСЕ РЕГИОНЫ",
-                "status": "mass_clear",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "message": text[:500],
-                "source": source
-            })
-        return updated
-
-    regions = extract_regions(text)
-    if not regions:
-        return False
-
-    if source == "dpr":
-        regions = [r for r in regions if r in ALLOWED_DPR_REGIONS]
-        if not regions:
-            return False
-
-    if not status:
-        return False
-
-    if msg_date is not None:
-        if msg_date.tzinfo is None:
-            msg_date = msg_date.replace(tzinfo=timezone.utc)
-        timestamp = msg_date.isoformat()
-    else:
-        timestamp = datetime.now(timezone.utc).isoformat()
-
-    clean_msg = clean_message_for_frontend(text)
-    updated = False
-
-    for r in regions:
-        cur_data = region_statuses.get(r, {})
-        cur_status = cur_data.get("status")
-
-        if source == "dpr":
-            pass
-        elif not is_history and status != "clear":
-            if cur_status is not None and STATUS_PRIORITY.get(status, 99) > STATUS_PRIORITY.get(cur_status, 99):
-                if msg_id:
-                    print(f"  ↳ {r}: {status} не приоритетнее {cur_status}")
-                continue
-
-        region_statuses[r] = {
-            "status": status,
-            "last_update": timestamp,
-            "message": clean_msg[:500] if clean_msg else "",
-            "source": source
-        }
-
-        alert_history.append({
-            "region": r,
-            "status": status,
-            "timestamp": timestamp,
-            "message": clean_msg[:500] if clean_msg else "",
-            "source": source
-        })
-
-        updated = True
-
-        if len(alert_history) > 5000:
-            alert_history.pop(0)
-
-        if msg_id:
-            print(f"  ✅ {r} → {status} (источник: {source})")
-
-    return updated
-
-def periodic_expire():
-    global telegram_client
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O = TC(SS(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O), _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0)
+    await _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O.start()
+    
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O()
+    _0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O()
+    
+    T.Thread(target=_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0, daemon=True).start()
+    T.Thread(target=_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, daemon=True).start()
+    T.Thread(target=_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0, daemon=True).start()
+    T.Thread(target=_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O, daemon=True).start()
     
     while True:
-        time.sleep(600)
-        try:
-            print("🔍 Проверка устаревших статусов...")
-            changed = expire_old_statuses()
-            if changed and telegram_client:
-                print("📢 Отправляем обновлённую сводку после устаревания...")
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(send_report(telegram_client, force=True))
-                loop.close()
-        except Exception as e:
-            print(f"❌ Ошибка при устаревании статусов: {e}")
+        await A.sleep(1)
 
-@app.route("/api/statuses")
-def get_statuses():
-    now = datetime.now(timezone.utc)
-    day_ago = now - timedelta(hours=24)
-    result = {"regions": {}, "last_updated": now.isoformat()}
-
-    for r, d in region_statuses.items():
-        count = 0
-        for a in reversed(alert_history[-5000:]):
-            if a["region"] == r:
-                try:
-                    at = datetime.fromisoformat(a["timestamp"])
-                    if at > day_ago:
-                        count += 1
-                except Exception:
-                    pass
-
-        result["regions"][r] = {
-            "status": d["status"],
-            "last_update": d["last_update"],
-            "message": d.get("message", ""),
-            "alerts_last_hour": count,
-            "source": d.get("source", "unknown")
-        }
-
-    return jsonify(result)
-
-@app.route("/api/recent_alerts")
-def get_recent_alerts():
-    filtered = list(reversed(alert_history[-100:]))[:50]
-    return jsonify({
-        "alerts": filtered,
-        "total": len(alert_history),
-        "last_updated": datetime.now(timezone.utc).isoformat()
-    })
-
-@app.route("/")
-def index():
-    return jsonify({
-        "status": "ok",
-        "endpoints": ["/api/statuses", "/api/recent_alerts"],
-        "regions_count": len(region_statuses),
-        "last_update": datetime.now(timezone.utc).isoformat()
-    })
-
-def push_to_github():
-    pass
-
-def periodic_push():
-    while True:
-        time.sleep(60)
-        if region_statuses:
-            save_state()
-
-def keep_alive():
-    port = int(os.environ.get("PORT", 5000))
-    while True:
-        time.sleep(240)
-        try:
-            requests.get(f"http://localhost:{port}/api/statuses", timeout=10)
-            print("💓 Self-ping OK")
-        except Exception as e:
-            print(f"💔 Self-ping failed: {e}")
-
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
-
-async def poll_messages():
-    global last_msg_id_main, last_msg_id_dpr, telegram_client
-
-    try:
-        main_channel = await telegram_client.get_entity(CHANNEL_USERNAME)
-        dpr_channel = await telegram_client.get_entity(DPR_CHANNEL)
-        print(f"✅ Основной канал: {main_channel.title}")
-        print(f"✅ Канал ДНР/ЛНР: {dpr_channel.title}")
-    except Exception as e:
-        print(f"❌ Ошибка получения каналов: {e}")
-        return
-
-    while True:
-        await asyncio.sleep(30)
-
-        try:
-            messages = await telegram_client.get_messages(CHANNEL_USERNAME, limit=50)
-            if messages:
-                updated = False
-                for msg in reversed(messages):
-                    if msg.id <= last_msg_id_main:
-                        continue
-                    last_msg_id_main = msg.id
-                    if msg.message:
-                        preview = msg.message[:80].replace('\n', ' ')
-                        print(f"📩 [main] ID:{msg.id} | {preview}...")
-                        if process_message(msg.message, msg.id, source="main", msg_date=msg.date):
-                            updated = True
-                if updated:
-                    await send_report(telegram_client)
-        except Exception as e:
-            print(f"❌ Ошибка основного канала: {e}")
-
-        try:
-            dpr_messages = await telegram_client.get_messages(DPR_CHANNEL, limit=50)
-            if dpr_messages:
-                updated = False
-                for msg in reversed(dpr_messages):
-                    if msg.id <= last_msg_id_dpr:
-                        continue
-                    last_msg_id_dpr = msg.id
-                    if msg.message:
-                        preview = msg.message[:80].replace('\n', ' ')
-                        print(f"📩 [DPR/Новороссия] ID:{msg.id} | {preview}...")
-                        if process_message(msg.message, msg.id, source="dpr", msg_date=msg.date):
-                            updated = True
-                if updated:
-                    await send_report(telegram_client)
-        except Exception as e:
-            print(f"❌ Ошибка канала ДНР/ЛНР: {e}")
-
-async def main():
-    global telegram_client, last_msg_id_main, last_msg_id_dpr, region_statuses
-    
-    telegram_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
-    await telegram_client.start()
-    print("✅ Telegram клиент запущен")
-
-    load_state()
-    expire_old_statuses()
-
-    last_msg_id_main_loaded = last_msg_id_main
-    last_msg_id_dpr_loaded = last_msg_id_dpr
-
-    print("📥 Загружаем историю...")
-
-    try:
-        all_messages = await telegram_client.get_messages(CHANNEL_USERNAME, limit=200)
-        if all_messages:
-            sorted_messages = sorted(all_messages, key=lambda x: x.id)
-            last_msg_id_main = sorted_messages[-1].id
-            new_count = 0
-            for msg in sorted_messages:
-                if msg.id <= last_msg_id_main_loaded:
-                    continue
-                if msg.message:
-                    preview = msg.message[:80].replace('\n', ' ')
-                    print(f"📥 [main] ID:{msg.id} | {preview}...")
-                    process_message(msg.message, msg.id, source="main", msg_date=msg.date, is_history=True)
-                    new_count += 1
-                    await asyncio.sleep(0.05)
-            print(f"✅ Обработано {len(sorted_messages)} сообщений из основного канала (новых: {new_count})")
-    except Exception as e:
-        print(f"❌ Ошибка основного канала: {e}")
-
-    try:
-        all_messages = await telegram_client.get_messages(DPR_CHANNEL, limit=200)
-        if all_messages:
-            sorted_messages = sorted(all_messages, key=lambda x: x.id)
-            last_msg_id_dpr = sorted_messages[-1].id
-            new_count = 0
-            for msg in sorted_messages:
-                if msg.id <= last_msg_id_dpr_loaded:
-                    continue
-                if msg.message:
-                    preview = msg.message[:80].replace('\n', ' ')
-                    print(f"📥 [DPR/Новороссия] ID:{msg.id} | {preview}...")
-                    process_message(msg.message, msg.id, source="dpr", msg_date=msg.date, is_history=True)
-                    new_count += 1
-                    await asyncio.sleep(0.05)
-            print(f"✅ Обработано {len(sorted_messages)} сообщений из канала ДНР/ЛНР (новых: {new_count})")
-    except Exception as e:
-        print(f"❌ Ошибка канала ДНР/ЛНР: {e}")
-
-    expire_old_statuses()
-
-    print(f"📊 Статусов регионов: {len(region_statuses)}")
-    print(f"📋 Записей в истории: {len(alert_history)}")
-
-    await send_report(telegram_client)
-
-    asyncio.create_task(poll_messages())
-    print("🔄 Polling запущен (каждые 30 секунд)")
-
-    threading.Thread(target=periodic_expire, daemon=True).start()
-    threading.Thread(target=run_flask, daemon=True).start()
-    threading.Thread(target=keep_alive, daemon=True).start()
-    threading.Thread(target=periodic_push, daemon=True).start()
-
-    print(f"""
-    ╔═══════════════════════════════════════════════════╗
-    ║              ✅ СЕРВЕР ЗАПУЩЕН                    ║
-    ╠═══════════════════════════════════════════════════╣
-    ║   📡 Основной канал: {CHANNEL_USERNAME}
-    ║   📡 Канал Новороссии: {DPR_CHANNEL}
-    ║   📢 Канал для сводок: @{REPORT_CHANNEL}
-    ║   📊 Статусов активно: {len(region_statuses)}
-    ║   📋 Записей в истории: {len(alert_history)}
-    ║   ⏰ Устаревание статусов: {STATUS_EXPIRY_HOURS} часов
-    ╚═══════════════════════════════════════════════════╝
-    """)
-
-    while True:
-        await asyncio.sleep(1)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == b'\x5f\x5f\x6d\x61\x69\x6e\x5f\x5f'.decode():
+    A.run(_0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O0O())
