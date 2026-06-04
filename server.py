@@ -2,7 +2,7 @@ import os as O, re as R, json as J, threading as T, time as I, requests as Q, as
 import hashlib as HL, secrets as SC
 from functools import wraps as WR
 from datetime import datetime as D, timedelta as TD, timezone as TZ
-from flask import Flask as F, jsonify as Jf, request as QR
+from flask import Flask as F, jsonify as Jf, request as QR, render_template_string as RTS
 from telethon import TelegramClient as TC
 from telethon.sessions import StringSession as SS
 from telethon.errors import FloodWaitError as FWE
@@ -43,7 +43,13 @@ MANUAL_STATUS_SOURCE = "admin_panel"
 
 ADMIN_CHANGES = []
 SNAPSHOT_BEFORE_ADMIN = {}
-_ADMIN_CHANGE_ID = 0   # сквозной ID для изменений
+_ADMIN_CHANGE_ID = 0
+
+# API Key system
+API_KEYS = {}          # key: {email, telegram, reason, created_at, expires_at, active}
+API_APPLICATIONS = []  # list of {id, email, telegram, reason, status, timestamp}
+_API_APP_ID = 0
+API_KEY_EXPIRY_DAYS = 30   # срок действия ключа в днях
 
 _13 = {"missile_alert":0, "missile_danger":1, "drone_attack":2, "drone_danger":3, "clear":4}
 
@@ -54,7 +60,7 @@ _16 = {}
 _17 = []
 _18 = 0
 _19 = 0
-_20 = "/tmp/radar_state.json"
+_20 = "/tmp/radar_state.json"   # локальный файл
 _21 = None
 
 _22 = {"костромской":"Костромская область","кировской":"Кировская область","московской":"Московская область","ленинградской":"Ленинградская область","нижегородской":"Нижегородская область","тульской":"Тульская область","калужской":"Калужская область","рязанской":"Рязанская область","тверской":"Тверская область","воронежской":"Воронежская область","белгородской":"Белгородская область","брянской":"Брянская область","курской":"Курская область","смоленской":"Смоленская область","орловской":"Орловская область","липецкой":"Липецкая область","тамбовской":"Тамбовская область","владимирской":"Владимирская область","ивановской":"Ивановская область","ярославской":"Ярославская область","вологодской":"Вологодская область","новгородской":"Новгородская область","псковской":"Псковская область","калининградской":"Калининградская область","пензенской":"Пензенская область","ульяновской":"Ульяновская область","саратовской":"Саратовская область","самарской":"Самарская область","оренбургской":"Оренбургская область","челябинской":"Челябинская область","свердловской":"Свердловская область","курганской":"Курганская область","тюменской":"Тюменская область","омской":"Омская область","томской":"Томская область","новосибирской":"Новосибирская область","кемеровской":"Кемеровская область","иркутской":"Иркутская область","амурской":"Амурская область","сахалинской":"Сахалинская область","магаданской":"Магаданская область","мурманской":"Мурманская область","архангельской":"Архангельская область","астраханской":"Астраханская область","волгоградской":"Волгоградская область","ростовской":"Ростовская область","запорожской":"Запорожская область","херсонской":"Херсонская область"}
@@ -118,6 +124,11 @@ _25 = ["Донецкая Народная Республика","Луганск�
 def _26(msg):
     print(f"[RADAR_DEBUG {D.now(TZ.utc).strftime('%H:%M:%S')}] {msg}", file=_sys.stderr, flush=True)
 
+def _280(msg):
+    if not msg: return msg
+    if msg.rstrip().endswith("@olegmmg"): return msg
+    return msg + " @olegmmg"
+
 def _27():
     global _16, _15
     _28 = D.now(TZ.utc)
@@ -131,7 +142,7 @@ def _27():
             _35 = D.fromisoformat(_34)
             if _35.tzinfo is None: _35 = _35.replace(tzinfo=TZ.utc)
             if _35 < _29 and _33.get("status") != "clear":
-                _16[_32] = {"status":"clear","last_update":_28.isoformat(),"message":f"Автоматический отбой (нет обновлений >{_12}ч)","source":_33.get("source","system")}
+                _16[_32] = {"status":"clear","last_update":_28.isoformat(),"message":_280(f"Автоматический отбой (нет обновлений >{_12}ч)"),"source":_33.get("source","system")}
                 _30 += 1
                 _31 = True
         except: pass
@@ -147,7 +158,7 @@ def _37(_38, _39="system"):
     _42 = {"drone_danger":"опасность БПЛА","missile_danger":"ракетная опасность","missile_alert":"ракетная тревога","drone_attack":"атака БПЛА"}
     for _43, _44 in list(_16.items()):
         if _44.get("status") == _38:
-            _16[_43] = {"status":"clear","last_update":_40,"message":f"Отбой {_42.get(_38, _38)} по всем регионам","source":_39}
+            _16[_43] = {"status":"clear","last_update":_40,"message":_280(f"Отбой {_42.get(_38, _38)} по всем регионам"),"source":_39}
             _41 += 1
     if _41 > 0:
         _15 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
@@ -156,12 +167,12 @@ def _37(_38, _39="system"):
 
 def _36():
     try:
-        _45 = {"region_statuses":_16,"alert_history":_17[-2000:],"last_msg_id_main":_18,"last_msg_id_dpr":_19,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_15,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN,"admin_change_id":_ADMIN_CHANGE_ID}
+        _45 = {"region_statuses":_16,"alert_history":_17[-2000:],"last_msg_id_main":_18,"last_msg_id_dpr":_19,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_15,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN,"admin_change_id":_ADMIN_CHANGE_ID,"api_keys":API_KEYS,"api_applications":API_APPLICATIONS[-200:],"api_app_id":_API_APP_ID}
         with open(_20, "w", encoding="utf-8") as _46: J.dump(_45, _46, ensure_ascii=False)
     except: pass
 
 def _47():
-    global _16, _17, _18, _19, _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN, _ADMIN_CHANGE_ID
+    global _16, _17, _18, _19, _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN, _ADMIN_CHANGE_ID, API_KEYS, API_APPLICATIONS, _API_APP_ID
     try:
         if not O.path.exists(_20): return
         with open(_20, "r", encoding="utf-8") as _48: _49 = J.load(_48)
@@ -173,6 +184,36 @@ def _47():
         ADMIN_CHANGES = _49.get("admin_changes", [])
         SNAPSHOT_BEFORE_ADMIN = _49.get("snapshot_before_admin", {})
         _ADMIN_CHANGE_ID = _49.get("admin_change_id", 0)
+        API_KEYS = _49.get("api_keys", {})
+        API_APPLICATIONS = _49.get("api_applications", [])
+        _API_APP_ID = _49.get("api_app_id", 0)
+    except: pass
+
+# ========= Сохранение в GitHub =========
+def _290():
+    if not _7 or not _8: return
+    try:
+        _291 = "data/radar_state.json"
+        _292 = J.dumps({"region_statuses":_16,"alert_history":_17[-2000:],"last_msg_id_main":_18,"last_msg_id_dpr":_19,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_15,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN,"admin_change_id":_ADMIN_CHANGE_ID,"api_keys":API_KEYS,"api_applications":API_APPLICATIONS[-200:],"api_app_id":_API_APP_ID}, ensure_ascii=False)
+        _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
+        _294 = {"Authorization": f"token {_7}"}
+        _295 = Q.get(_293, headers=_294)
+        _296 = None
+        if _295.status_code == 200:
+            _296 = _295.json().get("sha")
+        _297 = {"message": f"Auto save {D.now(TZ.utc).isoformat()}","content": HL.b64encode(_292.encode()).decode(),"branch": "main"}
+        if _296: _297["sha"] = _296
+        Q.put(_293, headers=_294, json=_297)
+    except Exception as e: _26(f"GitHub save error: {e}")
+
+# Вызываем сохранение в GitHub после локального сохранения и раз в 10 минут
+def _36():   # переопределяем с вызовом _290
+    global _16, _17, _18, _19, _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN, _ADMIN_CHANGE_ID, API_KEYS, API_APPLICATIONS, _API_APP_ID
+    try:
+        _45 = {"region_statuses":_16,"alert_history":_17[-2000:],"last_msg_id_main":_18,"last_msg_id_dpr":_19,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_15,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN,"admin_change_id":_ADMIN_CHANGE_ID,"api_keys":API_KEYS,"api_applications":API_APPLICATIONS[-200:],"api_app_id":_API_APP_ID}
+        with open(_20, "w", encoding="utf-8") as _46: J.dump(_45, _46, ensure_ascii=False)
+        # Сохраняем в GitHub (если настроено)
+        _290()
     except: pass
 
 def _50(_51): return _14.get(_51, _51)
@@ -362,7 +403,7 @@ def _123(_124, _125=None, _126="main", _127=None, _128=False):
         if _129 == "mass_clear_drone_danger": _130 = _37("drone_danger", _126)
         elif _129 == "mass_clear_missile_danger": _130 = _37("missile_danger", _126)
         elif _129 == "mass_clear_missile_alert": _130 = _37("missile_alert", _126)
-        if _130 and not _128: _17.append({"region":"ВСЕ РЕГИОНЫ","status":"mass_clear","timestamp":D.now(TZ.utc).isoformat(),"message":_124[:500],"source":_126})
+        if _130 and not _128: _17.append({"region":"ВСЕ РЕГИОНЫ","status":"mass_clear","timestamp":D.now(TZ.utc).isoformat(),"message":_280(_124[:500]),"source":_126})
         return _130
     _131 = _93(_124)
     if not _131: return False
@@ -371,6 +412,7 @@ def _123(_124, _125=None, _126="main", _127=None, _128=False):
     if not _129: return False
     _132 = _127.isoformat() if _127 and _127.tzinfo else D.now(TZ.utc).isoformat()
     _133 = _76(_124)
+    _133 = _280(_133) if _133 else ""
     _134 = False
     for _135 in _131:
         _136 = _16.get(_135, {}).get("status")
@@ -378,11 +420,11 @@ def _123(_124, _125=None, _126="main", _127=None, _128=False):
             if _136 is not None:
                 if _129 == "clear": pass
                 elif _13.get(_129, 99) > _13.get(_136, 99): continue
-        _16[_135] = {"status":_129,"last_update":_132,"message":_133[:500] if _133 else "","source":_126}
-        _17.append({"region":_135,"status":_129,"timestamp":_132,"message":_133[:500] if _133 else "","source":_126})
+        _16[_135] = {"status":_129,"last_update":_132,"message":_133,"source":_126}
+        _17.append({"region":_135,"status":_129,"timestamp":_132,"message":_133,"source":_126})
         if len(_17) > 5000: _17.pop(0)
         _134 = True
-        _137(_135, _129, _133 or "", _126)
+        _137(_135, _129, _133, _126)
     return _134
 
 def _138():
@@ -536,7 +578,7 @@ def _179():
     if not _184: _184 = _181
     _188 = _16.get(_184,{}).get("status","clear")
     _189 = D.now(TZ.utc)
-    _default_msg = _reason if _reason else "Статус изменён администратором"
+    _default_msg = _280(_reason if _reason else "Статус изменён администратором")
     _16[_184] = {"status":_182,"last_update":_189.isoformat(),"message":_default_msg,"source":MANUAL_STATUS_SOURCE}
     _17.append({"region":_184,"status":_182,"timestamp":_189.isoformat(),"message":_default_msg,"source":MANUAL_STATUS_SOURCE})
     if len(_17) > 5000: _17.pop(0)
@@ -559,10 +601,12 @@ def _191():
     _196 = []
     for _197, _198 in list(_16.items()):
         if _198.get("status") == _193:
-            _16[_197] = {"status":"clear","last_update":_195,"message":_reason or f"Массовый отбой {_194[_193]} (админ)","source":MANUAL_STATUS_SOURCE}
+            _msg = _reason if _reason else f"Массовый отбой {_194[_193]} (админ)"
+            _16[_197] = {"status":"clear","last_update":_195,"message":_280(_msg),"source":MANUAL_STATUS_SOURCE}
             _196.append(_197)
     if _196:
-        _17.append({"region":"ВСЕ РЕГИОНЫ","status":f"mass_clear_{_193}","timestamp":_195,"message":_reason or f"Массовый отбой {_194[_193]} (админ)","source":MANUAL_STATUS_SOURCE})
+        _msg_total = _reason if _reason else f"Массовый отбой {_194[_193]} (админ)"
+        _17.append({"region":"ВСЕ РЕГИОНЫ","status":f"mass_clear_{_193}","timestamp":_195,"message":_280(_msg_total),"source":MANUAL_STATUS_SOURCE})
         _147("ВСЕ РЕГИОНЫ", f"mass_clear_{_193}", _193, _reason)
         _15 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
         _36()
@@ -578,10 +622,12 @@ def _199():
     _201 = []
     for _202, _203 in list(_16.items()):
         if _203.get("status") != "clear":
-            _16[_202] = {"status":"clear","last_update":_200,"message":_reason or "Полный отбой всех тревог (админ)","source":MANUAL_STATUS_SOURCE}
+            _msg = _reason if _reason else "Полный отбой всех тревог (админ)"
+            _16[_202] = {"status":"clear","last_update":_200,"message":_280(_msg),"source":MANUAL_STATUS_SOURCE}
             _201.append(_202)
     if _201:
-        _17.append({"region":"ВСЕ РЕГИОНЫ","status":"mass_clear_all","timestamp":_200,"message":_reason or "Полный отбой всех тревог (админ)","source":MANUAL_STATUS_SOURCE})
+        _msg_total = _reason if _reason else "Полный отбой всех тревог (админ)"
+        _17.append({"region":"ВСЕ РЕГИОНЫ","status":"mass_clear_all","timestamp":_200,"message":_280(_msg_total),"source":MANUAL_STATUS_SOURCE})
         _147("ВСЕ РЕГИОНЫ", "mass_clear_all", None, _reason)
         _15 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
         _36()
@@ -608,15 +654,13 @@ def _205():
     else:
         for _210, _211 in list(_16.items()):
             if _211.get("source") == MANUAL_STATUS_SOURCE:
-                _16[_210] = {"status":"clear","last_update":D.now(TZ.utc).isoformat(),"message":"Откат изменений админа","source":"system"}
-                _207[_210] = {"status":"clear","last_update":D.now(TZ.utc).isoformat(),"message":"Откат изменений админа","source":"system"}
+                _16[_210] = {"status":"clear","last_update":D.now(TZ.utc).isoformat(),"message":_280("Откат изменений админа"),"source":"system"}
+                _207[_210] = {"status":"clear","last_update":D.now(TZ.utc).isoformat(),"message":_280("Откат изменений админа"),"source":"system"}
                 _206 += 1
     ADMIN_CHANGES = []
     _15 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
     _36()
     return Jf({"success":True,"restored_count":_206,"restored_regions":_207,"timestamp":D.now(TZ.utc).isoformat()})
-
-# ========= НОВЫЕ ЭНДПОИНТЫ =========
 
 @_.route("/admin/parse_message", methods=["POST"])
 @_155
@@ -632,9 +676,10 @@ def _256():
     if not _260: return Jf({"success":False,"error":"Не удалось определить регионы в сообщении"}), 400
     _261 = D.now(TZ.utc)
     _262 = {}
+    _cred_msg = _280(_258[:500])
     for _263 in _260:
-        _16[_263] = {"status":_259,"last_update":_261.isoformat(),"message":_258[:500],"source":"simulated"}
-        _17.append({"region":_263,"status":_259,"timestamp":_261.isoformat(),"message":_258[:500],"source":"simulated"})
+        _16[_263] = {"status":_259,"last_update":_261.isoformat(),"message":_cred_msg,"source":"simulated"}
+        _17.append({"region":_263,"status":_259,"timestamp":_261.isoformat(),"message":_cred_msg,"source":"simulated"})
         if len(_17) > 5000: _17.pop(0)
         _262[_263] = _259
     _36()
@@ -701,7 +746,7 @@ def _265(change_id):
     current_status = _16.get(region, {}).get("status")
     if current_status != target["status"]:
         return Jf({"success":False,"error":"Region status changed after admin action, cannot rollback"}), 400
-    _16[region] = {"status": prev_status, "last_update": D.now(TZ.utc).isoformat(), "message": f"Откат изменения #{change_id}", "source": "system"}
+    _16[region] = {"status": prev_status, "last_update": D.now(TZ.utc).isoformat(), "message": _280(f"Откат изменения #{change_id}"), "source": "system"}
     target["rolled_back"] = True
     _36()
     return Jf({"success":True,"region":region,"restored_status":prev_status})
@@ -756,7 +801,153 @@ def _271():
                 stats[day][status] += 1
     return Jf({"days": days, "stats": stats, "last_updated": D.now(TZ.utc).isoformat()})
 
-# Остальной код
+# ========= API Key endpoints =========
+@_.route("/api/request_key", methods=["GET","POST"])
+def _300():
+    if QR.method == "GET":
+        return RTS('''
+            <!DOCTYPE html>
+            <html lang="ru">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Заявка на API ключ</title>
+                <style>
+                    body { font-family: sans-serif; background: #0a0a0a; color: #ddd; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+                    .form-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 30px; width: 100%; max-width: 420px; text-align: center; }
+                    h2 { color: #fff; }
+                    input, textarea { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; background: rgba(255,255,255,0.05); color: white; font-size: 14px; outline: none; }
+                    button { width: 100%; padding: 12px; border: none; border-radius: 10px; background: #4488ff; color: white; font-size: 16px; cursor: pointer; }
+                    button:hover { background: #3366cc; }
+                    .success { color: #44bb44; }
+                    .error { color: #ff4444; }
+                </style>
+            </head>
+            <body>
+                <div class="form-box">
+                    <h2>🔑 Заявка на API ключ</h2>
+                    <p>Для доступа к данным радара</p>
+                    <form method="POST">
+                        <input type="email" name="email" placeholder="Ваш email" required>
+                        <input type="text" name="telegram" placeholder="Telegram (например, @username)" required>
+                        <textarea name="reason" placeholder="Зачем вам API?" rows="3" required></textarea>
+                        <button type="submit">Отправить заявку</button>
+                    </form>
+                    {% if msg %}<p class="{{msg_type}}">{{ msg }}</p>{% endif %}
+                </div>
+            </body>
+            </html>
+        ''', msg=None, msg_type="")
+    # POST
+    email = QR.form.get("email","").strip()
+    telegram = QR.form.get("telegram","").strip()
+    reason = QR.form.get("reason","").strip()
+    if not email or not telegram or not reason:
+        return RTS('''
+            <!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Заявка на API ключ</title>
+            <style>body { font-family: sans-serif; background: #0a0a0a; color: #ddd; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+            .form-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 30px; width: 100%; max-width: 420px; text-align: center; }
+            h2 { color: #fff; } .error { color: #ff4444; } a { color: #4488ff; }</style></head>
+            <body><div class="form-box"><h2>🔑 Заявка на API ключ</h2><p class="error">Пожалуйста, заполните все поля.</p><a href="/api/request_key">← Назад</a></div></body></html>
+        ''', msg="Пожалуйста, заполните все поля.", msg_type="error"), 400
+    global API_APPLICATIONS, _API_APP_ID
+    _API_APP_ID += 1
+    API_APPLICATIONS.append({
+        "id": _API_APP_ID,
+        "email": email,
+        "telegram": telegram,
+        "reason": reason,
+        "status": "pending",
+        "timestamp": D.now(TZ.utc).isoformat()
+    })
+    _36()
+    return RTS('''
+        <!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Заявка принята</title>
+        <style>body { font-family: sans-serif; background: #0a0a0a; color: #ddd; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+        .form-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 30px; width: 100%; max-width: 420px; text-align: center; }
+        h2 { color: #fff; } .success { color: #44bb44; } a { color: #4488ff; }</style></head>
+        <body><div class="form-box"><h2>✅ Заявка принята!</h2><p class="success">Спасибо! Для ускорения рассмотрения свяжитесь с @olegmmg в Telegram.</p></div></body></html>
+    ''')
+
+@_.route("/admin/api_applications", methods=["GET"])
+@_155
+def _301():
+    status_filter = QR.args.get("status", "").strip()
+    if status_filter:
+        filtered = [a for a in API_APPLICATIONS if a["status"] == status_filter]
+    else:
+        filtered = API_APPLICATIONS
+    return Jf({"applications": list(reversed(filtered[-200:])), "count": len(filtered)})
+
+@_.route("/admin/api_applications/<int:app_id>/approve", methods=["POST"])
+@_155
+def _302(app_id):
+    global API_KEYS, API_APPLICATIONS
+    app = None
+    for a in API_APPLICATIONS:
+        if a["id"] == app_id:
+            app = a
+            break
+    if not app: return Jf({"success":False,"error":"Application not found"}), 404
+    if app["status"] != "pending": return Jf({"success":False,"error":"Application already processed"}), 400
+    # Генерируем ключ
+    key = SC.token_hex(32)
+    now = D.now(TZ.utc)
+    expires = now + TD(days=API_KEY_EXPIRY_DAYS)
+    API_KEYS[key] = {
+        "email": app["email"],
+        "telegram": app["telegram"],
+        "reason": app["reason"],
+        "created_at": now.isoformat(),
+        "expires_at": expires.isoformat(),
+        "active": True
+    }
+    app["status"] = "approved"
+    _36()
+    return Jf({"success":True,"api_key":key,"expires_at":expires.isoformat()})
+
+@_.route("/admin/api_applications/<int:app_id>/reject", methods=["POST"])
+@_155
+def _303(app_id):
+    global API_APPLICATIONS
+    app = None
+    for a in API_APPLICATIONS:
+        if a["id"] == app_id:
+            app = a
+            break
+    if not app: return Jf({"success":False,"error":"Application not found"}), 404
+    if app["status"] != "pending": return Jf({"success":False,"error":"Application already processed"}), 400
+    app["status"] = "rejected"
+    _36()
+    return Jf({"success":True})
+
+@_.route("/admin/api_keys", methods=["GET"])
+@_155
+def _304():
+    keys_list = []
+    for k, v in API_KEYS.items():
+        keys_list.append({
+            "key": k,
+            "email": v["email"],
+            "telegram": v["telegram"],
+            "reason": v["reason"],
+            "created_at": v["created_at"],
+            "expires_at": v["expires_at"],
+            "active": v["active"]
+        })
+    return Jf({"keys": keys_list, "count": len(keys_list)})
+
+@_.route("/admin/api_keys/revoke", methods=["POST"])
+@_155
+def _305():
+    key = QR.get_json().get("key","").strip() if QR.get_json() else ""
+    if not key or key not in API_KEYS:
+        return Jf({"success":False,"error":"Key not found"}), 404
+    API_KEYS[key]["active"] = False
+    _36()
+    return Jf({"success":True})
+
+# Остальные эндпоинты без изменений...
 @_.route("/api/statuses")
 def _212():
     _213 = D.now(TZ.utc)
@@ -778,7 +969,7 @@ def _220():
 
 @_.route("/")
 def _221():
-    return Jf({"status":"ok","endpoints":["/api/statuses","/api/recent_alerts","/admin/login","/admin/regions","/admin/set_status","/admin/mass_clear","/admin/mass_clear_all","/admin/changes","/admin/rollback","/admin/parse_message","/admin/log","/admin/log/<id>/rollback","/admin/region_details/<region>","/admin/stats"],"regions_count":len(_16),"last_updated":D.now(TZ.utc).isoformat()})
+    return Jf({"status":"ok","endpoints":["/api/statuses","/api/recent_alerts","/admin/login","/admin/regions","/admin/set_status","/admin/mass_clear","/admin/mass_clear_all","/admin/changes","/admin/rollback","/admin/parse_message","/admin/log","/admin/log/<id>/rollback","/admin/region_details/<region>","/admin/stats","/api/request_key","/admin/api_applications","/admin/api_keys"],"regions_count":len(_16),"last_updated":D.now(TZ.utc).isoformat()})
 
 def _222():
     while True:
