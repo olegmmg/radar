@@ -43,6 +43,7 @@ MANUAL_STATUS_SOURCE = "admin_panel"
 
 ADMIN_CHANGES = []
 SNAPSHOT_BEFORE_ADMIN = {}
+_ADMIN_CHANGE_ID = 0   # сквозной ID для изменений
 
 _13 = {"missile_alert":0, "missile_danger":1, "drone_attack":2, "drone_danger":3, "clear":4}
 
@@ -155,12 +156,12 @@ def _37(_38, _39="system"):
 
 def _36():
     try:
-        _45 = {"region_statuses":_16,"alert_history":_17[-2000:],"last_msg_id_main":_18,"last_msg_id_dpr":_19,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_15,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN}
+        _45 = {"region_statuses":_16,"alert_history":_17[-2000:],"last_msg_id_main":_18,"last_msg_id_dpr":_19,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_15,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN,"admin_change_id":_ADMIN_CHANGE_ID}
         with open(_20, "w", encoding="utf-8") as _46: J.dump(_45, _46, ensure_ascii=False)
     except: pass
 
 def _47():
-    global _16, _17, _18, _19, _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN
+    global _16, _17, _18, _19, _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN, _ADMIN_CHANGE_ID
     try:
         if not O.path.exists(_20): return
         with open(_20, "r", encoding="utf-8") as _48: _49 = J.load(_48)
@@ -171,6 +172,7 @@ def _47():
         _15 = _49.get("last_summary", {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None})
         ADMIN_CHANGES = _49.get("admin_changes", [])
         SNAPSHOT_BEFORE_ADMIN = _49.get("snapshot_before_admin", {})
+        _ADMIN_CHANGE_ID = _49.get("admin_change_id", 0)
     except: pass
 
 def _50(_51): return _14.get(_51, _51)
@@ -409,14 +411,18 @@ def _137(_141, _142, _143, _144):
             "source": _144
         }
 
-def _147(_148, _149, _150=None):
-    global ADMIN_CHANGES
+def _147(_148, _149, _150=None, _reason=None):
+    global ADMIN_CHANGES, _ADMIN_CHANGE_ID
+    _ADMIN_CHANGE_ID += 1
     ADMIN_CHANGES.append({
+        "id": _ADMIN_CHANGE_ID,
         "region": _148,
         "status": _149,
         "previous_status": _150,
+        "reason": _reason,
         "timestamp": D.now(TZ.utc).isoformat(),
-        "source": MANUAL_STATUS_SOURCE
+        "source": MANUAL_STATUS_SOURCE,
+        "rolled_back": False
     })
     if len(ADMIN_CHANGES) > 1000: ADMIN_CHANGES = ADMIN_CHANGES[-1000:]
 
@@ -512,6 +518,7 @@ def _179():
     if not _180: return Jf({"success":False,"error":"No data"}), 400
     _181 = _180.get("region","").strip()
     _182 = _180.get("status","").strip()
+    _reason = _180.get("reason","")
     if not _181 or not _182: return Jf({"success":False,"error":"Region and status required"}), 400
     _183 = ["missile_alert","missile_danger","drone_attack","drone_danger","clear"]
     if _182 not in _183: return Jf({"success":False,"error":f"Invalid status"}), 400
@@ -529,11 +536,11 @@ def _179():
     if not _184: _184 = _181
     _188 = _16.get(_184,{}).get("status","clear")
     _189 = D.now(TZ.utc)
-    _190 = {"missile_alert":"Ракетная тревога (админ)","missile_danger":"Ракетная опасность (админ)","drone_attack":"Атака БПЛА (админ)","drone_danger":"Опасность БПЛА (админ)","clear":"Отбой (админ)"}
-    _16[_184] = {"status":_182,"last_update":_189.isoformat(),"message":_190.get(_182,f"Статус изменён на {_182}"),"source":MANUAL_STATUS_SOURCE}
-    _17.append({"region":_184,"status":_182,"timestamp":_189.isoformat(),"message":_190.get(_182,f"Статус изменён на {_182}"),"source":MANUAL_STATUS_SOURCE})
+    _default_msg = _reason if _reason else "Статус изменён администратором"
+    _16[_184] = {"status":_182,"last_update":_189.isoformat(),"message":_default_msg,"source":MANUAL_STATUS_SOURCE}
+    _17.append({"region":_184,"status":_182,"timestamp":_189.isoformat(),"message":_default_msg,"source":MANUAL_STATUS_SOURCE})
     if len(_17) > 5000: _17.pop(0)
-    _147(_184, _182, _188)
+    _147(_184, _182, _188, _reason)
     _36()
     return Jf({"success":True,"region":_184,"status":_182,"previous_status":_188,"timestamp":_189.isoformat()})
 
@@ -544,6 +551,7 @@ def _191():
     _192 = QR.get_json()
     if not _192: return Jf({"success":False,"error":"No data"}), 400
     _193 = _192.get("status_type","").strip()
+    _reason = _192.get("reason","")
     _194 = {"drone_danger":"опасность БПЛА","missile_danger":"ракетная опасность","missile_alert":"ракетная тревога"}
     if _193 not in _194: return Jf({"success":False,"error":"Invalid status_type"}), 400
     if not SNAPSHOT_BEFORE_ADMIN: _138()
@@ -551,11 +559,11 @@ def _191():
     _196 = []
     for _197, _198 in list(_16.items()):
         if _198.get("status") == _193:
-            _16[_197] = {"status":"clear","last_update":_195,"message":f"Массовый отбой {_194[_193]} (админ)","source":MANUAL_STATUS_SOURCE}
+            _16[_197] = {"status":"clear","last_update":_195,"message":_reason or f"Массовый отбой {_194[_193]} (админ)","source":MANUAL_STATUS_SOURCE}
             _196.append(_197)
     if _196:
-        _17.append({"region":"ВСЕ РЕГИОНЫ","status":f"mass_clear_{_193}","timestamp":_195,"message":f"Массовый отбой {_194[_193]} (админ)","source":MANUAL_STATUS_SOURCE})
-        _147("ВСЕ РЕГИОНЫ", f"mass_clear_{_193}", _193)
+        _17.append({"region":"ВСЕ РЕГИОНЫ","status":f"mass_clear_{_193}","timestamp":_195,"message":_reason or f"Массовый отбой {_194[_193]} (админ)","source":MANUAL_STATUS_SOURCE})
+        _147("ВСЕ РЕГИОНЫ", f"mass_clear_{_193}", _193, _reason)
         _15 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
         _36()
     return Jf({"success":True,"status_type":_193,"cleared_count":len(_196),"cleared_regions":_196,"timestamp":_195})
@@ -564,16 +572,17 @@ def _191():
 @_155
 def _199():
     global _16, _17, _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN
-    if not SNAPSHOT_BEFORE_ADMIN: _138()
     _200 = D.now(TZ.utc).isoformat()
+    _reason = QR.get_json().get("reason","") if QR.get_json() else ""
+    if not SNAPSHOT_BEFORE_ADMIN: _138()
     _201 = []
     for _202, _203 in list(_16.items()):
         if _203.get("status") != "clear":
-            _16[_202] = {"status":"clear","last_update":_200,"message":"Полный отбой всех тревог (админ)","source":MANUAL_STATUS_SOURCE}
+            _16[_202] = {"status":"clear","last_update":_200,"message":_reason or "Полный отбой всех тревог (админ)","source":MANUAL_STATUS_SOURCE}
             _201.append(_202)
     if _201:
-        _17.append({"region":"ВСЕ РЕГИОНЫ","status":"mass_clear_all","timestamp":_200,"message":"Полный отбой всех тревог (админ)","source":MANUAL_STATUS_SOURCE})
-        _147("ВСЕ РЕГИОНЫ", "mass_clear_all", None)
+        _17.append({"region":"ВСЕ РЕГИОНЫ","status":"mass_clear_all","timestamp":_200,"message":_reason or "Полный отбой всех тревог (админ)","source":MANUAL_STATUS_SOURCE})
+        _147("ВСЕ РЕГИОНЫ", "mass_clear_all", None, _reason)
         _15 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
         _36()
     return Jf({"success":True,"cleared_count":len(_201),"cleared_regions":_201,"timestamp":_200})
@@ -607,6 +616,147 @@ def _205():
     _36()
     return Jf({"success":True,"restored_count":_206,"restored_regions":_207,"timestamp":D.now(TZ.utc).isoformat()})
 
+# ========= НОВЫЕ ЭНДПОИНТЫ =========
+
+@_.route("/admin/parse_message", methods=["POST"])
+@_155
+def _256():
+    global _16, _17
+    _257 = QR.get_json()
+    if not _257: return Jf({"success":False,"error":"No data"}), 400
+    _258 = _257.get("message","").strip()
+    if not _258: return Jf({"success":False,"error":"Empty message"}), 400
+    _259 = _120(_258)
+    if not _259: return Jf({"success":False,"error":"Не удалось определить тип тревоги в сообщении"}), 400
+    _260 = _93(_258)
+    if not _260: return Jf({"success":False,"error":"Не удалось определить регионы в сообщении"}), 400
+    _261 = D.now(TZ.utc)
+    _262 = {}
+    for _263 in _260:
+        _16[_263] = {"status":_259,"last_update":_261.isoformat(),"message":_258[:500],"source":"simulated"}
+        _17.append({"region":_263,"status":_259,"timestamp":_261.isoformat(),"message":_258[:500],"source":"simulated"})
+        if len(_17) > 5000: _17.pop(0)
+        _262[_263] = _259
+    _36()
+    return Jf({"success":True,"parsed_status":_259,"regions":_260,"updated":_262,"timestamp":_261.isoformat()})
+
+@_.route("/admin/log", methods=["GET"])
+@_155
+def _264():
+    page = QR.args.get("page", 1, type=int)
+    limit = QR.args.get("limit", 50, type=int)
+    region_filter = QR.args.get("region", "").strip()
+    status_filter = QR.args.get("status", "").strip()
+    source_filter = QR.args.get("source", "").strip()
+    entries = []
+    for ch in ADMIN_CHANGES:
+        if ch.get("rolled_back"): continue
+        entries.append({
+            "id": ch.get("id"),
+            "region": ch["region"],
+            "status": ch["status"],
+            "previous_status": ch.get("previous_status"),
+            "reason": ch.get("reason",""),
+            "timestamp": ch["timestamp"],
+            "source": ch.get("source", MANUAL_STATUS_SOURCE),
+            "type": "admin"
+        })
+    for idx, alert in enumerate(reversed(_17)):
+        entries.append({
+            "id": f"alert_{len(_17)-idx}",
+            "region": alert["region"],
+            "status": alert["status"],
+            "previous_status": None,
+            "reason": alert.get("message",""),
+            "timestamp": alert["timestamp"],
+            "source": alert.get("source","unknown"),
+            "type": "alert"
+        })
+    if region_filter:
+        entries = [e for e in entries if region_filter.lower() in e["region"].lower()]
+    if status_filter:
+        entries = [e for e in entries if status_filter.lower() in e["status"].lower()]
+    if source_filter:
+        entries = [e for e in entries if source_filter.lower() in e["source"].lower()]
+    total = len(entries)
+    start = (page-1)*limit
+    end = start + limit
+    page_entries = entries[start:end]
+    return Jf({"entries": page_entries, "page": page, "limit": limit, "total": total, "last_updated": D.now(TZ.utc).isoformat()})
+
+@_.route("/admin/log/<int:change_id>/rollback", methods=["POST"])
+@_155
+def _265(change_id):
+    global _16, ADMIN_CHANGES
+    target = None
+    for ch in ADMIN_CHANGES:
+        if ch.get("id") == change_id and not ch.get("rolled_back"):
+            target = ch
+            break
+    if not target: return Jf({"success":False,"error":"Change not found or already rolled back"}), 404
+    region = target["region"]
+    prev_status = target.get("previous_status")
+    if not prev_status or region == "ВСЕ РЕГИОНЫ":
+        return Jf({"success":False,"error":"Cannot rollback this change"}), 400
+    current_status = _16.get(region, {}).get("status")
+    if current_status != target["status"]:
+        return Jf({"success":False,"error":"Region status changed after admin action, cannot rollback"}), 400
+    _16[region] = {"status": prev_status, "last_update": D.now(TZ.utc).isoformat(), "message": f"Откат изменения #{change_id}", "source": "system"}
+    target["rolled_back"] = True
+    _36()
+    return Jf({"success":True,"region":region,"restored_status":prev_status})
+
+@_.route("/admin/region_details/<path:region>", methods=["GET"])
+@_155
+def _266(region):
+    _267 = None
+    for _268 in _16.keys():
+        if _268.lower() == region.lower():
+            _267 = _268
+            break
+    if not _267:
+        for _269, _270 in _23.items():
+            if _270.lower() == region.lower() or _269.lower() == region.lower():
+                _267 = _270
+                break
+    if not _267:
+        return Jf({"error":"Region not found"}), 404
+    info = _16.get(_267, {"status":"clear","last_update":None,"message":"","source":"system"})
+    recent = []
+    for alert in reversed(_17):
+        if alert["region"] == _267:
+            recent.append(alert)
+            if len(recent) >= 10: break
+    return Jf({
+        "region": _267,
+        "status": info["status"],
+        "last_update": info.get("last_update"),
+        "message": info.get("message",""),
+        "source": info.get("source","unknown"),
+        "recent_alerts": recent
+    })
+
+@_.route("/admin/stats", methods=["GET"])
+@_155
+def _271():
+    days = QR.args.get("days", 7, type=int)
+    end_date = D.now(TZ.utc).date()
+    start_date = end_date - TD(days=days-1)
+    date_list = [(start_date + TD(days=i)).isoformat() for i in range(days)]
+    stats = {d: {"missile_alert":0,"missile_danger":0,"drone_attack":0,"drone_danger":0,"clear":0} for d in date_list}
+    for alert in _17:
+        try:
+            ts = D.fromisoformat(alert["timestamp"])
+            if ts.tzinfo: ts = ts.astimezone(TZ.utc).replace(tzinfo=None)
+        except: continue
+        day = ts.date().isoformat()
+        if day in stats:
+            status = alert["status"]
+            if status in stats[day]:
+                stats[day][status] += 1
+    return Jf({"days": days, "stats": stats, "last_updated": D.now(TZ.utc).isoformat()})
+
+# Остальной код
 @_.route("/api/statuses")
 def _212():
     _213 = D.now(TZ.utc)
@@ -628,7 +778,7 @@ def _220():
 
 @_.route("/")
 def _221():
-    return Jf({"status":"ok","endpoints":["/api/statuses","/api/recent_alerts","/admin/login","/admin/regions","/admin/set_status","/admin/mass_clear","/admin/mass_clear_all","/admin/changes","/admin/rollback"],"regions_count":len(_16),"last_updated":D.now(TZ.utc).isoformat()})
+    return Jf({"status":"ok","endpoints":["/api/statuses","/api/recent_alerts","/admin/login","/admin/regions","/admin/set_status","/admin/mass_clear","/admin/mass_clear_all","/admin/changes","/admin/rollback","/admin/parse_message","/admin/log","/admin/log/<id>/rollback","/admin/region_details/<region>","/admin/stats"],"regions_count":len(_16),"last_updated":D.now(TZ.utc).isoformat()})
 
 def _222():
     while True:
