@@ -46,10 +46,10 @@ SNAPSHOT_BEFORE_ADMIN = {}
 _ADMIN_CHANGE_ID = 0
 
 # API Key system
-API_KEYS = {}          # key: {email, telegram, reason, created_at, expires_at, active}
-API_APPLICATIONS = []  # list of {id, email, telegram, reason, status, timestamp}
+API_KEYS = {}
+API_APPLICATIONS = []
 _API_APP_ID = 0
-API_KEY_EXPIRY_DAYS = 30   # срок действия ключа в днях
+API_KEY_EXPIRY_DAYS = 30
 
 _13 = {"missile_alert":0, "missile_danger":1, "drone_attack":2, "drone_danger":3, "clear":4}
 
@@ -60,7 +60,7 @@ _16 = {}
 _17 = []
 _18 = 0
 _19 = 0
-_20 = "/tmp/radar_state.json"   # локальный файл
+_20 = "/tmp/radar_state.json"
 _21 = None
 
 _22 = {"костромской":"Костромская область","кировской":"Кировская область","московской":"Московская область","ленинградской":"Ленинградская область","нижегородской":"Нижегородская область","тульской":"Тульская область","калужской":"Калужская область","рязанской":"Рязанская область","тверской":"Тверская область","воронежской":"Воронежская область","белгородской":"Белгородская область","брянской":"Брянская область","курской":"Курская область","смоленской":"Смоленская область","орловской":"Орловская область","липецкой":"Липецкая область","тамбовской":"Тамбовская область","владимирской":"Владимирская область","ивановской":"Ивановская область","ярославской":"Ярославская область","вологодской":"Вологодская область","новгородской":"Новгородская область","псковской":"Псковская область","калининградской":"Калининградская область","пензенской":"Пензенская область","ульяновской":"Ульяновская область","саратовской":"Саратовская область","самарской":"Самарская область","оренбургской":"Оренбургская область","челябинской":"Челябинская область","свердловской":"Свердловская область","курганской":"Курганская область","тюменской":"Тюменская область","омской":"Омская область","томской":"Томская область","новосибирской":"Новосибирская область","кемеровской":"Кемеровская область","иркутской":"Иркутская область","амурской":"Амурская область","сахалинской":"Сахалинская область","магаданской":"Магаданская область","мурманской":"Мурманская область","архангельской":"Архангельская область","астраханской":"Астраханская область","волгоградской":"Волгоградская область","ростовской":"Ростовская область","запорожской":"Запорожская область","херсонской":"Херсонская область"}
@@ -165,10 +165,27 @@ def _37(_38, _39="system"):
         _36()
     return _41 > 0
 
+def _290():
+    if not _7 or not _8: return
+    try:
+        _291 = "data/radar_state.json"
+        _292 = J.dumps({"region_statuses":_16,"alert_history":_17[-2000:],"last_msg_id_main":_18,"last_msg_id_dpr":_19,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_15,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN,"admin_change_id":_ADMIN_CHANGE_ID,"api_keys":API_KEYS,"api_applications":API_APPLICATIONS[-200:],"api_app_id":_API_APP_ID}, ensure_ascii=False)
+        _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
+        _294 = {"Authorization": f"token {_7}"}
+        _295 = Q.get(_293, headers=_294)
+        _296 = None
+        if _295.status_code == 200:
+            _296 = _295.json().get("sha")
+        _297 = {"message": f"Auto save {D.now(TZ.utc).isoformat()}","content": HL.b64encode(_292.encode()).decode(),"branch": "main"}
+        if _296: _297["sha"] = _296
+        Q.put(_293, headers=_294, json=_297)
+    except Exception as e: _26(f"GitHub save error: {e}")
+
 def _36():
     try:
         _45 = {"region_statuses":_16,"alert_history":_17[-2000:],"last_msg_id_main":_18,"last_msg_id_dpr":_19,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_15,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN,"admin_change_id":_ADMIN_CHANGE_ID,"api_keys":API_KEYS,"api_applications":API_APPLICATIONS[-200:],"api_app_id":_API_APP_ID}
         with open(_20, "w", encoding="utf-8") as _46: J.dump(_45, _46, ensure_ascii=False)
+        _290()
     except: pass
 
 def _47():
@@ -187,33 +204,6 @@ def _47():
         API_KEYS = _49.get("api_keys", {})
         API_APPLICATIONS = _49.get("api_applications", [])
         _API_APP_ID = _49.get("api_app_id", 0)
-    except: pass
-
-# ========= Сохранение в GitHub =========
-def _290():
-    if not _7 or not _8: return
-    try:
-        _291 = "data/radar_state.json"
-        _292 = J.dumps({"region_statuses":_16,"alert_history":_17[-2000:],"last_msg_id_main":_18,"last_msg_id_dpr":_19,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_15,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN,"admin_change_id":_ADMIN_CHANGE_ID,"api_keys":API_KEYS,"api_applications":API_APPLICATIONS[-200:],"api_app_id":_API_APP_ID}, ensure_ascii=False)
-        _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
-        _294 = {"Authorization": f"token {_7}"}
-        _295 = Q.get(_293, headers=_294)
-        _296 = None
-        if _295.status_code == 200:
-            _296 = _295.json().get("sha")
-        _297 = {"message": f"Auto save {D.now(TZ.utc).isoformat()}","content": HL.b64encode(_292.encode()).decode(),"branch": "main"}
-        if _296: _297["sha"] = _296
-        Q.put(_293, headers=_294, json=_297)
-    except Exception as e: _26(f"GitHub save error: {e}")
-
-# Вызываем сохранение в GitHub после локального сохранения и раз в 10 минут
-def _36():   # переопределяем с вызовом _290
-    global _16, _17, _18, _19, _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN, _ADMIN_CHANGE_ID, API_KEYS, API_APPLICATIONS, _API_APP_ID
-    try:
-        _45 = {"region_statuses":_16,"alert_history":_17[-2000:],"last_msg_id_main":_18,"last_msg_id_dpr":_19,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_15,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN,"admin_change_id":_ADMIN_CHANGE_ID,"api_keys":API_KEYS,"api_applications":API_APPLICATIONS[-200:],"api_app_id":_API_APP_ID}
-        with open(_20, "w", encoding="utf-8") as _46: J.dump(_45, _46, ensure_ascii=False)
-        # Сохраняем в GitHub (если настроено)
-        _290()
     except: pass
 
 def _50(_51): return _14.get(_51, _51)
@@ -947,9 +937,22 @@ def _305():
     _36()
     return Jf({"success":True})
 
-# Остальные эндпоинты без изменений...
+# ========= Публичные API с проверкой ключа =========
 @_.route("/api/statuses")
 def _212():
+    api_key = QR.args.get("api_key", "")
+    if not api_key or api_key not in API_KEYS:
+        return Jf({"error":"Valid API key required"}), 403
+    key_info = API_KEYS[api_key]
+    if not key_info.get("active", False):
+        return Jf({"error":"API key is revoked"}), 403
+    try:
+        expires = D.fromisoformat(key_info["expires_at"])
+        if D.now(TZ.utc) > expires:
+            return Jf({"error":"API key expired"}), 403
+    except:
+        return Jf({"error":"Invalid expiration date in key"}), 403
+
     _213 = D.now(TZ.utc)
     _214 = _213 - TD(hours=24)
     _215 = {"regions":{},"last_updated":_213.isoformat()}
@@ -965,6 +968,19 @@ def _212():
 
 @_.route("/api/recent_alerts")
 def _220():
+    api_key = QR.args.get("api_key", "")
+    if not api_key or api_key not in API_KEYS:
+        return Jf({"error":"Valid API key required"}), 403
+    key_info = API_KEYS[api_key]
+    if not key_info.get("active", False):
+        return Jf({"error":"API key is revoked"}), 403
+    try:
+        expires = D.fromisoformat(key_info["expires_at"])
+        if D.now(TZ.utc) > expires:
+            return Jf({"error":"API key expired"}), 403
+    except:
+        return Jf({"error":"Invalid expiration date in key"}), 403
+
     return Jf({"alerts":list(reversed(_17[-100:]))[:50],"total":len(_17),"last_updated":D.now(TZ.utc).isoformat()})
 
 @_.route("/")
