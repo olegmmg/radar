@@ -42,6 +42,38 @@ BLOCK_DURATION = TD(hours=24)
 TOKEN_EXPIRY = TD(hours=12)
 MANUAL_STATUS_SOURCE = "admin_panel"
 
+# ============= ИСТОРИЯ ИЗМЕНЕНИЙ АДМИНА =============
+ADMIN_CHANGES = []  # [{region, status, previous_status, timestamp, source}]
+SNAPSHOT_BEFORE_ADMIN = {}  # Снимок состояния до изменений админа
+
+def _save_admin_snapshot():
+    """Сохранить текущее состояние перед изменениями админа"""
+    global SNAPSHOT_BEFORE_ADMIN
+    # Не перезаписываем, если уже есть снимок
+    if SNAPSHOT_BEFORE_ADMIN:
+        return
+    SNAPSHOT_BEFORE_ADMIN = {}
+    for region, info in _15.items():
+        SNAPSHOT_BEFORE_ADMIN[region] = {
+            "status": info.get("status", "clear"),
+            "last_update": info.get("last_update"),
+            "message": info.get("message", ""),
+            "source": info.get("source", "unknown")
+        }
+
+def _record_admin_change(region, status, previous_status=None):
+    """Записать изменение админа в историю"""
+    global ADMIN_CHANGES
+    ADMIN_CHANGES.append({
+        "region": region,
+        "status": status,
+        "previous_status": previous_status,
+        "timestamp": D.now(TZ.utc).isoformat(),
+        "source": MANUAL_STATUS_SOURCE
+    })
+    if len(ADMIN_CHANGES) > 1000:
+        ADMIN_CHANGES = ADMIN_CHANGES[-1000:]
+
 _12 = {"missile_alert":0, "missile_danger":1, "drone_attack":2, "drone_danger":3, "clear":4}
 
 _13 = {"Московская область":"Московская обл.","Москва":"Москва","Ленинградская область":"Ленинградская обл.","Санкт-Петербург":"Санкт-Петербург","Нижегородская область":"Нижегородская обл.","Ставропольский край":"Ставропольский край","Краснодарский край":"Краснодарский край","Чеченская Республика":"Чеченская Респ.","Республика Дагестан":"Респ. Дагестан","Республика Ингушетия":"Респ. Ингушетия","Республика Северная Осетия":"Респ. Сев. Осетия","Карачаево-Черкесская Республика":"Карачаево-Черкесия","Кабардино-Балкарская Республика":"Кабардино-Балкария","Республика Адыгея":"Респ. Адыгея","Республика Крым":"Респ. Крым","Запорожская область":"Запорожская обл.","Херсонская область":"Херсонская обл.","Донецкая Народная Республика":"ДНР","Луганская Народная Республика":"ЛНР","Астраханская область":"Астраханская обл.","Волгоградская область":"Волгоградская обл.","Белгородская область":"Белгородская обл.","Брянская область":"Брянская обл.","Воронежская область":"Воронежская обл.","Курская область":"Курская обл.","Ростовская область":"Ростовская обл.","Смоленская область":"Смоленская обл.","Тульская область":"Тульская обл.","Калужская область":"Калужская обл.","Рязанская область":"Рязанская обл.","Тверская область":"Тверская обл.","Ярославская область":"Ярославская обл.","Владимирская область":"Владимирская обл.","Ивановская область":"Ивановская обл.","Костромская область":"Костромская обл.","Тамбовская область":"Тамбовская обл.","Липецкая область":"Липецкая обл.","Орловская область":"Орловская обл.","Пензенская область":"Пензенская обл.","Саратовская область":"Саратовская обл.","Ульяновская область":"Ульяновская обл.","Самарская область":"Самарская обл.","Пермский край":"Пермский край","Республика Башкортостан":"Респ. Башкортостан","Республика Татарстан":"Респ. Татарстан","Республика Удмуртия":"Респ. Удмуртия","Республика Марий Эл":"Респ. Марий Эл","Республика Мордовия":"Респ. Мордовия","Чувашская Республика":"Чувашская Респ.","Кировская область":"Кировская обл.","Оренбургская область":"Оренбургская обл.","Челябинская область":"Челябинская обл.","Свердловская область":"Свердловская обл.","Курганская область":"Курганская обл.","Тюменская область":"Тюменская обл.","Омская область":"Омская обл.","Новосибирская область":"Новосибирская обл.","Томская область":"Томская обл.","Кемеровская область":"Кемеровская обл.","Алтайский край":"Алтайский край","Красноярский край":"Красноярский край","Иркутская область":"Иркутская обл.","Забайкальский край":"Забайкальский край","Республика Бурятия":"Респ. Бурятия","Приморский край":"Приморский край","Хабаровский край":"Хабаровский край","Амурская область":"Амурская обл.","Сахалинская область":"Сахалинская обл.","Камчатский край":"Камчатский край","Магаданская область":"Магаданская обл.","Республика Саха (Якутия)":"Респ. Саха (Якутия)","Еврейская АО":"Еврейская АО","Чукотский АО":"Чукотский АО","ЯНАО":"ЯНАО","Ханты-Мансийский АО":"ХМАО","Ненецкий АО":"Ненецкий АО","Республика Карелия":"Респ. Карелия","Республика Коми":"Респ. Коми","Архангельская область":"Архангельская обл.","Мурманская область":"Мурманская обл.","Вологодская область":"Вологодская обл.","Новгородская область":"Новгородская обл.","Псковская область":"Псковская обл.","Калининградская область":"Калининградская обл.","Республика Алтай":"Респ. Алтай","Республика Хакасия":"Респ. Хакасия","Республика Тыва":"Респ. Тыва","Республика Калмыкия":"Респ. Калмыкия"}
@@ -154,12 +186,12 @@ def _34(_35, _36="system"):
 
 def _33():
     try:
-        _42 = {"region_statuses":_15,"alert_history":_16[-2000:],"last_msg_id_main":_17,"last_msg_id_dpr":_18,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_14}
+        _42 = {"region_statuses":_15,"alert_history":_16[-2000:],"last_msg_id_main":_17,"last_msg_id_dpr":_18,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_14,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN}
         with open(_19, "w", encoding="utf-8") as _43: J.dump(_42, _43, ensure_ascii=False)
     except: pass
 
 def _44():
-    global _15, _16, _17, _18, _14
+    global _15, _16, _17, _18, _14, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN
     try:
         if not O.path.exists(_19): return
         with open(_19, "r", encoding="utf-8") as _45: _46 = J.load(_45)
@@ -168,6 +200,8 @@ def _44():
         _17 = _46.get("last_msg_id_main", 0)
         _18 = _46.get("last_msg_id_dpr", 0)
         _14 = _46.get("last_summary", {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None})
+        ADMIN_CHANGES = _46.get("admin_changes", [])
+        SNAPSHOT_BEFORE_ADMIN = _46.get("snapshot_before_admin", {})
     except: pass
 
 def _47(_48): return _13.get(_48, _48)
@@ -246,7 +280,6 @@ def _83(_84): return bool(R.search(r"с \d{1,2}:\d{2} до \d{1,2}:\d{2}.*уни
 def _region_match(_key, _text):
     _key_lower = _key.lower()
     _text_lower = _text.lower()
-
     if _key in _22_word_boundary:
         try:
             pattern = r'\b' + R.escape(_key_lower) + r'\b'
@@ -262,8 +295,6 @@ def _85(_86):
     _87 = _86.lower()
     _88 = set()
     _89 = set()
-
-    # --- ШАГ 1: прямое совпадение ключей из словаря ---
     _dbg(f"=== _85() START | текст: {repr(_86[:120])} ===")
     for _90, _91 in _22.items():
         if _region_match(_90, _86):
@@ -273,8 +304,6 @@ def _85(_86):
                 _89.add(_91)
             else:
                 _dbg(f"  [ШАГ 1] ДУБЛЬ (уже есть): ключ='{_90}' → регион='{_91}'")
-
-    # --- ШАГ 2: явный префикс города (г.Пермь, город Пермь) ---
     _city_pattern = r'(?:г\.|город|города)\s*([А-Яа-яёЁ-]+)'
     _cities = R.findall(_city_pattern, _87)
     if _cities:
@@ -287,8 +316,6 @@ def _85(_86):
                     _88.add(region)
                     _89.add(region)
                     break
-
-    # --- ШАГ 3: районы (Пермский район) ---
     _district_pattern = r'([А-Яа-яёЁ-]+)\s+район'
     _districts = R.findall(_district_pattern, _87)
     if _districts:
@@ -303,8 +330,6 @@ def _85(_86):
                     _88.add(region)
                     _89.add(region)
                     break
-
-    # --- ШАГ 4: склонения (костромской области) ---
     _94 = R.findall(r'([А-Яа-яёЁ]+(?:ской|ской))\s+области', _87)
     if _94:
         _dbg(f"  [ШАГ 4] найдены склонения: {_94}")
@@ -316,8 +341,6 @@ def _85(_86):
                 _dbg(f"  [ШАГ 4] СОВПАДЕНИЕ: склонение='{_95}' → регион='{_97}'")
                 _88.add(_97)
                 _89.add(_97)
-
-    # --- ШАГ 5: именительный падеж (Вологодская область) ---
     _98 = R.findall(r'([А-Яа-яёЁ]+(?:ская|ская))\s+область', _87)
     if _98:
         _dbg(f"  [ШАГ 5] найдены прилагательные+область: {_98}")
@@ -328,8 +351,6 @@ def _85(_86):
                 _88.add(_91)
                 _89.add(_91)
                 break
-
-    # --- ШАГ 6: края ---
     _100 = R.findall(r'([А-Яа-яёЁ]+(?:ский|ский))\s+край', _87)
     if _100:
         _dbg(f"  [ШАГ 6] найдены края: {_100}")
@@ -340,8 +361,6 @@ def _85(_86):
                 _88.add(_91)
                 _89.add(_91)
                 break
-
-    # --- ШАГ 7: республики ---
     _102 = R.findall(r'(?:республика|республики)\s+([А-Яа-яёЁ][а-яёЁ]+(?:ская|ская)?)', _87)
     if _102:
         _dbg(f"  [ШАГ 7] найдены республики: {_102}")
@@ -353,8 +372,6 @@ def _85(_86):
                     _88.add(_91)
                     _89.add(_91)
                     break
-
-    # --- ШАГ 8: короткие названия республик ---
     for _104 in ["башкортостан","чувашия","татарстан","удмуртия","марий эл","мордовия","карелия","коми","адыгея","калмыкия","алтай","хакасия","тыва","бурятия","саха"]:
         if R.search(r'\b' + R.escape(_104) + r'\b', _87):
             for _90, _91 in _22.items():
@@ -364,8 +381,6 @@ def _85(_86):
                         _88.add(_91)
                         _89.add(_91)
                         break
-
-    # --- ШАГ 9: спорные территории ---
     if "Донецкая Народная Республика" not in _89 and R.search(r'\b(днр|dnr|донецк|горловка|макеевка|енакиево)\b', _87):
         _dbg(f"  [ШАГ 9] СОВПАДЕНИЕ ДНР")
         _88.add("Донецкая Народная Республика")
@@ -378,7 +393,6 @@ def _85(_86):
     if "Херсонская область" not in _89 and R.search(r'херсон|kherson', _87):
         _dbg(f"  [ШАГ 9] СОВПАДЕНИЕ Херсонская")
         _88.add("Херсонская область")
-
     result = list(_88)
     _dbg(f"=== _85() ИТОГ: {result} ===")
     return result
@@ -404,20 +418,16 @@ def _105(_106):
 def _108(_109, _110=None, _111="main", _112=None, _113=False):
     global _15, _16
     if not _109: return False
-
     _dbg(f"--- _108() SOURCE={_111} ID={_110} ---")
     _dbg(f"  [ORIG_TEXT] {repr(_109[:600])}")
-
     if _111 == "main" and _78(_109):
         _dbg(f"  [_108] ОТФИЛЬТРОВАНО: _78() → спам/нерелевантно")
         return False
     if _83(_109):
         _dbg(f"  [_108] ОТФИЛЬТРОВАНО: _83() → сводка уничтожения")
         return False
-
     _114 = _105(_109)
     _dbg(f"  [_108] статус из _105(): {_114!r}")
-
     if _114 and _114.startswith("mass_clear_"):
         _115 = False
         if _114 == "mass_clear_drone_danger": _115 = _34("drone_danger", _111)
@@ -425,10 +435,8 @@ def _108(_109, _110=None, _111="main", _112=None, _113=False):
         elif _114 == "mass_clear_missile_alert": _115 = _34("missile_alert", _111)
         if _115 and not _113: _16.append({"region":"ВСЕ РЕГИОНЫ","status":"mass_clear","timestamp":D.now(TZ.utc).isoformat(),"message":_109[:500],"source":_111})
         return _115
-
     _116 = _85(_109)
     _dbg(f"  [_108] регионы из _85(): {_116}")
-
     if not _116:
         _dbg(f"  [_108] ПРОПУСК: регионы не найдены")
         return False
@@ -439,15 +447,12 @@ def _108(_109, _110=None, _111="main", _112=None, _113=False):
     if not _114:
         _dbg(f"  [_108] ПРОПУСК: статус не определён (_105 вернул None)")
         return False
-
     _117 = _112.isoformat() if _112 and _112.tzinfo else D.now(TZ.utc).isoformat()
     _118 = _73(_109)
     _119 = False
-
     for _120 in _116:
         _121 = _15.get(_120, {}).get("status")
         _dbg(f"  [_108] регион='{_120}' текущий_статус={_121!r} новый_статус={_114!r}")
-
         if _111 != "dpr" and not _113:
             if _121 is not None:
                 if _114 == "clear":
@@ -455,13 +460,11 @@ def _108(_109, _110=None, _111="main", _112=None, _113=False):
                 elif _12.get(_114, 99) > _12.get(_121, 99):
                     _dbg(f"  [_108] ПРОПУСК ОБНОВЛЕНИЯ: приоритет нового ({_114}={_12.get(_114,99)}) < текущего ({_121}={_12.get(_121,99)})")
                     continue
-
         _15[_120] = {"status":_114,"last_update":_117,"message":_118[:500] if _118 else "","source":_111}
         _16.append({"region":_120,"status":_114,"timestamp":_117,"message":_118[:500] if _118 else "","source":_111})
         if len(_16) > 5000: _16.pop(0)
         _119 = True
         _dbg(f"  [_108] ОБНОВЛЕНО: регион='{_120}' → {_114}")
-
     if not _119:
         _dbg(f"  [_108] НИ ОДИН регион не обновлён (все заблокированы приоритетом)")
     return _119
@@ -482,7 +485,6 @@ def _122():
 # ============= АДМИН-ПАНЕЛЬ API =============
 
 def _check_ip_blocked():
-    """Проверить, заблокирован ли IP"""
     ip = QR.remote_addr
     if ip in BLOCKED_IPS:
         if BLOCKED_IPS[ip] > D.now(TZ.utc):
@@ -494,26 +496,20 @@ def _check_ip_blocked():
     return False
 
 def _admin_required(f):
-    """Декоратор для проверки авторизации админа"""
     @WR(f)
     def decorated(*args, **kwargs):
         auth_header = QR.headers.get('Authorization', '')
         token = auth_header.replace('Bearer ', '')
-        
         if not token or token not in ADMIN_TOKENS:
             return Jf({"error": "Unauthorized", "message": "Требуется авторизация"}), 401
-        
         if ADMIN_TOKENS[token] < D.now(TZ.utc):
             del ADMIN_TOKENS[token]
             return Jf({"error": "Token expired", "message": "Токен истёк"}), 401
-        
-        # Продлить токен при активности
         ADMIN_TOKENS[token] = D.now(TZ.utc) + TOKEN_EXPIRY
         return f(*args, **kwargs)
     return decorated
 
 def _cleanup_tokens():
-    """Удалить просроченные токены"""
     now = D.now(TZ.utc)
     expired = [t for t, exp in ADMIN_TOKENS.items() if exp < now]
     for t in expired:
@@ -521,10 +517,7 @@ def _cleanup_tokens():
 
 @_.route("/admin/login", methods=["POST"])
 def _admin_login():
-    """Авторизация в админ-панели"""
     ip = QR.remote_addr
-    
-    # Проверка блокировки IP
     if _check_ip_blocked():
         blocked_until = BLOCKED_IPS.get(ip)
         return Jf({
@@ -533,35 +526,23 @@ def _admin_login():
             "message": f"IP заблокирован до {blocked_until.strftime('%H:%M %d.%m.%Y') if blocked_until else 'неизвестно'}",
             "blocked_until": blocked_until.isoformat() if blocked_until else None
         }), 403
-    
     data = QR.get_json()
     password = data.get("password", "") if data else ""
-    
     if not password:
         return Jf({"success": False, "error": "No password"}), 400
-    
-    # Проверка пароля
     if password == ADMIN_PASSWORD:
-        # Сброс счётчика попыток
         if ip in LOGIN_ATTEMPTS:
             del LOGIN_ATTEMPTS[ip]
-        
-        # Генерация токена
         token = SC.token_hex(32)
         ADMIN_TOKENS[token] = D.now(TZ.utc) + TOKEN_EXPIRY
-        
-        # Очистка старых токенов
         _cleanup_tokens()
-        
         return Jf({
             "success": True,
             "token": token,
             "expires_at": (D.now(TZ.utc) + TOKEN_EXPIRY).isoformat()
         })
     else:
-        # Увеличить счётчик попыток
         LOGIN_ATTEMPTS[ip] = LOGIN_ATTEMPTS.get(ip, 0) + 1
-        
         if LOGIN_ATTEMPTS[ip] >= MAX_LOGIN_ATTEMPTS:
             BLOCKED_IPS[ip] = D.now(TZ.utc) + BLOCK_DURATION
             return Jf({
@@ -570,7 +551,6 @@ def _admin_login():
                 "message": "IP заблокирован на 24 часа после 3 неверных попыток",
                 "blocked_until": BLOCKED_IPS[ip].isoformat()
             }), 403
-        
         return Jf({
             "success": False,
             "error": "Wrong password",
@@ -580,11 +560,9 @@ def _admin_login():
 @_.route("/admin/regions", methods=["GET"])
 @_admin_required
 def _admin_get_regions():
-    """Получить список всех регионов с текущими статусами"""
     regions_data = {}
     now = D.now(TZ.utc)
     cutoff = now - TD(hours=24)
-    
     for region_name, region_info in _15.items():
         alerts_count = 0
         for alert in reversed(_16[-5000:]):
@@ -594,7 +572,6 @@ def _admin_get_regions():
                         alerts_count += 1
                 except:
                     pass
-        
         regions_data[region_name] = {
             "status": region_info["status"],
             "last_update": region_info["last_update"],
@@ -602,8 +579,6 @@ def _admin_get_regions():
             "alerts_last_hour": alerts_count,
             "source": region_info.get("source", "unknown")
         }
-    
-    # Добавить регионы, которых ещё нет в _15 (новые, без данных)
     for region_name in _22.values():
         if region_name not in regions_data:
             regions_data[region_name] = {
@@ -613,13 +588,10 @@ def _admin_get_regions():
                 "alerts_last_hour": 0,
                 "source": "system"
             }
-    
-    # Удалить дубликаты значений словаря _22
     unique_regions = {}
     for name, data in regions_data.items():
         if name not in unique_regions:
             unique_regions[name] = data
-    
     return Jf({
         "regions": unique_regions,
         "last_updated": now.isoformat(),
@@ -629,41 +601,36 @@ def _admin_get_regions():
 @_.route("/admin/set_status", methods=["POST"])
 @_admin_required
 def _admin_set_status():
-    """Установить статус для конкретного региона"""
-    global _15, _16
-    
+    global _15, _16, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN
     data = QR.get_json()
     if not data:
         return Jf({"success": False, "error": "No data"}), 400
-    
     region = data.get("region", "").strip()
     status = data.get("status", "").strip()
-    
     if not region or not status:
         return Jf({"success": False, "error": "Region and status required"}), 400
-    
     valid_statuses = ["missile_alert", "missile_danger", "drone_attack", "drone_danger", "clear"]
     if status not in valid_statuses:
         return Jf({"success": False, "error": f"Invalid status. Valid: {valid_statuses}"}), 400
     
-    # Найти регион по имени
+    # Сохранить снимок перед первым изменением
+    if not SNAPSHOT_BEFORE_ADMIN:
+        _save_admin_snapshot()
+    
     found_region = None
     for r_name in _15.keys():
         if r_name.lower() == region.lower():
             found_region = r_name
             break
-    
     if not found_region:
-        # Проверить, есть ли такой регион в _22
         for key, val in _22.items():
             if val.lower() == region.lower() or key.lower() == region.lower():
                 found_region = val
                 break
-    
     if not found_region:
-        # Создать новый регион
         found_region = region
     
+    previous_status = _15.get(found_region, {}).get("status", "clear")
     now = D.now(TZ.utc)
     status_labels = {
         "missile_alert": "Ракетная тревога (админ)",
@@ -672,14 +639,12 @@ def _admin_set_status():
         "drone_danger": "Опасность БПЛА (админ)",
         "clear": "Отбой (админ)"
     }
-    
     _15[found_region] = {
         "status": status,
         "last_update": now.isoformat(),
         "message": status_labels.get(status, f"Статус изменён на {status}"),
         "source": MANUAL_STATUS_SOURCE
     }
-    
     _16.append({
         "region": found_region,
         "status": status,
@@ -687,43 +652,42 @@ def _admin_set_status():
         "message": status_labels.get(status, f"Статус изменён на {status}"),
         "source": MANUAL_STATUS_SOURCE
     })
-    
     if len(_16) > 5000:
         _16.pop(0)
     
+    # Записать изменение админа
+    _record_admin_change(found_region, status, previous_status)
     _33()
-    
     return Jf({
         "success": True,
         "region": found_region,
         "status": status,
+        "previous_status": previous_status,
         "timestamp": now.isoformat()
     })
 
 @_.route("/admin/mass_clear", methods=["POST"])
 @_admin_required
 def _admin_mass_clear():
-    """Массовый отбой определённого типа тревоги"""
-    global _15, _16, _14
-    
+    global _15, _16, _14, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN
     data = QR.get_json()
     if not data:
         return Jf({"success": False, "error": "No data"}), 400
-    
     status_type = data.get("status_type", "").strip()
-    
     valid_types = {
         "drone_danger": "опасность БПЛА",
         "missile_danger": "ракетная опасность",
         "missile_alert": "ракетная тревога"
     }
-    
     if status_type not in valid_types:
         return Jf({"success": False, "error": f"Invalid status_type. Valid: {list(valid_types.keys())}"}), 400
     
+    # Сохранить снимок
+    if not SNAPSHOT_BEFORE_ADMIN:
+        _save_admin_snapshot()
+    
     now = D.now(TZ.utc).isoformat()
     cleared = []
-    
     for region_name, region_info in list(_15.items()):
         if region_info.get("status") == status_type:
             _15[region_name] = {
@@ -733,7 +697,6 @@ def _admin_mass_clear():
                 "source": MANUAL_STATUS_SOURCE
             }
             cleared.append(region_name)
-    
     if cleared:
         _16.append({
             "region": "ВСЕ РЕГИОНЫ",
@@ -742,10 +705,9 @@ def _admin_mass_clear():
             "message": f"Массовый отбой {valid_types[status_type]} по всем регионам (админ)",
             "source": MANUAL_STATUS_SOURCE
         })
-        
+        _record_admin_change("ВСЕ РЕГИОНЫ", f"mass_clear_{status_type}", status_type)
         _14 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
         _33()
-    
     return Jf({
         "success": True,
         "status_type": status_type,
@@ -757,12 +719,14 @@ def _admin_mass_clear():
 @_.route("/admin/mass_clear_all", methods=["POST"])
 @_admin_required
 def _admin_mass_clear_all():
-    """Полный отбой всех тревог"""
-    global _15, _16, _14
+    global _15, _16, _14, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN
+    
+    # Сохранить снимок
+    if not SNAPSHOT_BEFORE_ADMIN:
+        _save_admin_snapshot()
     
     now = D.now(TZ.utc).isoformat()
     cleared = []
-    
     for region_name, region_info in list(_15.items()):
         if region_info.get("status") != "clear":
             _15[region_name] = {
@@ -772,7 +736,6 @@ def _admin_mass_clear_all():
                 "source": MANUAL_STATUS_SOURCE
             }
             cleared.append(region_name)
-    
     if cleared:
         _16.append({
             "region": "ВСЕ РЕГИОНЫ",
@@ -781,15 +744,84 @@ def _admin_mass_clear_all():
             "message": "Полный отбой всех тревог по всем регионам (админ)",
             "source": MANUAL_STATUS_SOURCE
         })
-        
+        _record_admin_change("ВСЕ РЕГИОНЫ", "mass_clear_all", None)
         _14 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
         _33()
-    
     return Jf({
         "success": True,
         "cleared_count": len(cleared),
         "cleared_regions": cleared,
         "timestamp": now
+    })
+
+@_.route("/admin/changes", methods=["GET"])
+@_admin_required
+def _admin_get_changes():
+    """Получить список изменений, сделанных через админ-панель"""
+    return Jf({
+        "changes": list(reversed(ADMIN_CHANGES[-200:])),
+        "count": len(ADMIN_CHANGES),
+        "last_updated": D.now(TZ.utc).isoformat()
+    })
+
+@_.route("/admin/rollback", methods=["POST"])
+@_admin_required
+def _admin_rollback():
+    """Откатить все изменения админа, восстановить состояние из Telegram"""
+    global _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN, _14
+    
+    if not SNAPSHOT_BEFORE_ADMIN and not ADMIN_CHANGES:
+        return Jf({
+            "success": False,
+            "error": "No changes to rollback",
+            "message": "Нет изменений для отката"
+        }), 400
+    
+    restored_count = 0
+    restored_regions = {}
+    
+    if SNAPSHOT_BEFORE_ADMIN:
+        for region, info in SNAPSHOT_BEFORE_ADMIN.items():
+            _15[region] = {
+                "status": info["status"],
+                "last_update": info["last_update"] or D.now(TZ.utc).isoformat(),
+                "message": info["message"],
+                "source": info["source"]
+            }
+            restored_regions[region] = {
+                "status": info["status"],
+                "last_update": info["last_update"],
+                "message": info["message"],
+                "source": info["source"]
+            }
+            restored_count += 1
+        SNAPSHOT_BEFORE_ADMIN = {}
+    else:
+        for region, info in list(_15.items()):
+            if info.get("source") == MANUAL_STATUS_SOURCE:
+                _15[region] = {
+                    "status": "clear",
+                    "last_update": D.now(TZ.utc).isoformat(),
+                    "message": "Откат изменений админа",
+                    "source": "system"
+                }
+                restored_regions[region] = {
+                    "status": "clear",
+                    "last_update": D.now(TZ.utc).isoformat(),
+                    "message": "Откат изменений админа",
+                    "source": "system"
+                }
+                restored_count += 1
+    
+    ADMIN_CHANGES = []
+    _14 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
+    _33()
+    
+    return Jf({
+        "success": True,
+        "restored_count": restored_count,
+        "restored_regions": restored_regions,
+        "timestamp": D.now(TZ.utc).isoformat()
     })
 
 # ============= ОСНОВНЫЕ API-ЭНДПОИНТЫ =============
@@ -815,7 +847,7 @@ def _133():
 
 @_.route("/")
 def _134():
-    return Jf({"status":"ok","endpoints":["/api/statuses","/api/recent_alerts","/admin/login","/admin/regions","/admin/set_status","/admin/mass_clear","/admin/mass_clear_all"],"regions_count":len(_15),"last_updated":D.now(TZ.utc).isoformat()})
+    return Jf({"status":"ok","endpoints":["/api/statuses","/api/recent_alerts","/admin/login","/admin/regions","/admin/set_status","/admin/mass_clear","/admin/mass_clear_all","/admin/changes","/admin/rollback"],"regions_count":len(_15),"last_updated":D.now(TZ.utc).isoformat()})
 
 def _135():
     while True:
