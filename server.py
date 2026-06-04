@@ -1,6 +1,8 @@
 import os as O, re as R, json as J, threading as T, time as I, requests as Q, asyncio as A
+import hashlib as HL, secrets as SC
+from functools import wraps as WR
 from datetime import datetime as D, timedelta as TD, timezone as TZ
-from flask import Flask as F, jsonify as Jf
+from flask import Flask as F, jsonify as Jf, request as QR
 from telethon import TelegramClient as TC
 from telethon.sessions import StringSession as SS
 from telethon.errors import FloodWaitError as FWE
@@ -11,9 +13,14 @@ _ = F(__name__)
 @_.after_request
 def _1(_2):
     _2.headers["Access-Control-Allow-Origin"] = "*"
-    _2.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    _2.headers["Access-Control-Allow-Methods"] = "GET"
+    _2.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    _2.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return _2
+
+@_.route("/admin", methods=["OPTIONS"])
+@_.route("/admin/<path:path>", methods=["OPTIONS"])
+def _handle_options(path=None):
+    return "", 200
 
 _3 = int(O.environ["API_ID"])
 _4 = O.environ["API_HASH"]
@@ -24,6 +31,16 @@ _8 = O.environ.get("CHANNEL_USERNAME", "radarrussiia")
 _9 = O.environ.get("DPR_CHANNEL", "DPR_channel")
 _10 = O.environ.get("REPORT_CHANNEL", "RadarMapRf")
 _11 = int(O.environ.get("STATUS_EXPIRY_HOURS", 12))
+
+# ============= АДМИН-ПАНЕЛЬ КОНФИГ =============
+ADMIN_PASSWORD = O.environ.get("ADMIN_PASSWORD", "admin123")
+ADMIN_TOKENS = {}
+BLOCKED_IPS = {}
+LOGIN_ATTEMPTS = {}
+MAX_LOGIN_ATTEMPTS = 3
+BLOCK_DURATION = TD(hours=24)
+TOKEN_EXPIRY = TD(hours=12)
+MANUAL_STATUS_SOURCE = "admin_panel"
 
 _12 = {"missile_alert":0, "missile_danger":1, "drone_attack":2, "drone_danger":3, "clear":4}
 
@@ -90,8 +107,7 @@ _22_word_boundary = {
     "Дагестан", "Марий Эл", "Иваново", "Тверь",
     "Московский регион", "Подмосковье", "Нижний Новгород", "Санкт-Петербург",
     "Причерноморье", "Побережье Крыма", "Крымский мост", "Приморско-Ахтарск",
-    "Марий Эл", "г. Москва", "г. Санкт-Петербург", "г.Пермь",
-    "Омская область", "Томская область",
+    "г. Москва", "г. Санкт-Петербург", "г.Пермь",
 }
 
 _23 = ["Донецкая Народная Республика","Луганская Народная Республика","Запорожская область","Херсонская область"]
@@ -389,7 +405,6 @@ def _108(_109, _110=None, _111="main", _112=None, _113=False):
     global _15, _16
     if not _109: return False
 
-    # Логируем ПОЛНЫЙ оригинальный текст (до _73), именно он идёт в _85()
     _dbg(f"--- _108() SOURCE={_111} ID={_110} ---")
     _dbg(f"  [ORIG_TEXT] {repr(_109[:600])}")
 
@@ -464,6 +479,321 @@ def _122():
                 _124.close()
         except: pass
 
+# ============= АДМИН-ПАНЕЛЬ API =============
+
+def _check_ip_blocked():
+    """Проверить, заблокирован ли IP"""
+    ip = QR.remote_addr
+    if ip in BLOCKED_IPS:
+        if BLOCKED_IPS[ip] > D.now(TZ.utc):
+            return True
+        else:
+            del BLOCKED_IPS[ip]
+            if ip in LOGIN_ATTEMPTS:
+                del LOGIN_ATTEMPTS[ip]
+    return False
+
+def _admin_required(f):
+    """Декоратор для проверки авторизации админа"""
+    @WR(f)
+    def decorated(*args, **kwargs):
+        auth_header = QR.headers.get('Authorization', '')
+        token = auth_header.replace('Bearer ', '')
+        
+        if not token or token not in ADMIN_TOKENS:
+            return Jf({"error": "Unauthorized", "message": "Требуется авторизация"}), 401
+        
+        if ADMIN_TOKENS[token] < D.now(TZ.utc):
+            del ADMIN_TOKENS[token]
+            return Jf({"error": "Token expired", "message": "Токен истёк"}), 401
+        
+        # Продлить токен при активности
+        ADMIN_TOKENS[token] = D.now(TZ.utc) + TOKEN_EXPIRY
+        return f(*args, **kwargs)
+    return decorated
+
+def _cleanup_tokens():
+    """Удалить просроченные токены"""
+    now = D.now(TZ.utc)
+    expired = [t for t, exp in ADMIN_TOKENS.items() if exp < now]
+    for t in expired:
+        del ADMIN_TOKENS[t]
+
+@_.route("/admin/login", methods=["POST"])
+def _admin_login():
+    """Авторизация в админ-панели"""
+    ip = QR.remote_addr
+    
+    # Проверка блокировки IP
+    if _check_ip_blocked():
+        blocked_until = BLOCKED_IPS.get(ip)
+        return Jf({
+            "success": False,
+            "error": "IP blocked",
+            "message": f"IP заблокирован до {blocked_until.strftime('%H:%M %d.%m.%Y') if blocked_until else 'неизвестно'}",
+            "blocked_until": blocked_until.isoformat() if blocked_until else None
+        }), 403
+    
+    data = QR.get_json()
+    password = data.get("password", "") if data else ""
+    
+    if not password:
+        return Jf({"success": False, "error": "No password"}), 400
+    
+    # Проверка пароля
+    if password == ADMIN_PASSWORD:
+        # Сброс счётчика попыток
+        if ip in LOGIN_ATTEMPTS:
+            del LOGIN_ATTEMPTS[ip]
+        
+        # Генерация токена
+        token = SC.token_hex(32)
+        ADMIN_TOKENS[token] = D.now(TZ.utc) + TOKEN_EXPIRY
+        
+        # Очистка старых токенов
+        _cleanup_tokens()
+        
+        return Jf({
+            "success": True,
+            "token": token,
+            "expires_at": (D.now(TZ.utc) + TOKEN_EXPIRY).isoformat()
+        })
+    else:
+        # Увеличить счётчик попыток
+        LOGIN_ATTEMPTS[ip] = LOGIN_ATTEMPTS.get(ip, 0) + 1
+        
+        if LOGIN_ATTEMPTS[ip] >= MAX_LOGIN_ATTEMPTS:
+            BLOCKED_IPS[ip] = D.now(TZ.utc) + BLOCK_DURATION
+            return Jf({
+                "success": False,
+                "error": "Too many attempts",
+                "message": "IP заблокирован на 24 часа после 3 неверных попыток",
+                "blocked_until": BLOCKED_IPS[ip].isoformat()
+            }), 403
+        
+        return Jf({
+            "success": False,
+            "error": "Wrong password",
+            "attempts_left": MAX_LOGIN_ATTEMPTS - LOGIN_ATTEMPTS[ip]
+        }), 401
+
+@_.route("/admin/regions", methods=["GET"])
+@_admin_required
+def _admin_get_regions():
+    """Получить список всех регионов с текущими статусами"""
+    regions_data = {}
+    now = D.now(TZ.utc)
+    cutoff = now - TD(hours=24)
+    
+    for region_name, region_info in _15.items():
+        alerts_count = 0
+        for alert in reversed(_16[-5000:]):
+            if alert["region"] == region_name:
+                try:
+                    if D.fromisoformat(alert["timestamp"]) > cutoff:
+                        alerts_count += 1
+                except:
+                    pass
+        
+        regions_data[region_name] = {
+            "status": region_info["status"],
+            "last_update": region_info["last_update"],
+            "message": region_info.get("message", ""),
+            "alerts_last_hour": alerts_count,
+            "source": region_info.get("source", "unknown")
+        }
+    
+    # Добавить регионы, которых ещё нет в _15 (новые, без данных)
+    for region_name in _22.values():
+        if region_name not in regions_data:
+            regions_data[region_name] = {
+                "status": "clear",
+                "last_update": None,
+                "message": "",
+                "alerts_last_hour": 0,
+                "source": "system"
+            }
+    
+    # Удалить дубликаты значений словаря _22
+    unique_regions = {}
+    for name, data in regions_data.items():
+        if name not in unique_regions:
+            unique_regions[name] = data
+    
+    return Jf({
+        "regions": unique_regions,
+        "last_updated": now.isoformat(),
+        "total_count": len(unique_regions)
+    })
+
+@_.route("/admin/set_status", methods=["POST"])
+@_admin_required
+def _admin_set_status():
+    """Установить статус для конкретного региона"""
+    global _15, _16
+    
+    data = QR.get_json()
+    if not data:
+        return Jf({"success": False, "error": "No data"}), 400
+    
+    region = data.get("region", "").strip()
+    status = data.get("status", "").strip()
+    
+    if not region or not status:
+        return Jf({"success": False, "error": "Region and status required"}), 400
+    
+    valid_statuses = ["missile_alert", "missile_danger", "drone_attack", "drone_danger", "clear"]
+    if status not in valid_statuses:
+        return Jf({"success": False, "error": f"Invalid status. Valid: {valid_statuses}"}), 400
+    
+    # Найти регион по имени
+    found_region = None
+    for r_name in _15.keys():
+        if r_name.lower() == region.lower():
+            found_region = r_name
+            break
+    
+    if not found_region:
+        # Проверить, есть ли такой регион в _22
+        for key, val in _22.items():
+            if val.lower() == region.lower() or key.lower() == region.lower():
+                found_region = val
+                break
+    
+    if not found_region:
+        # Создать новый регион
+        found_region = region
+    
+    now = D.now(TZ.utc)
+    status_labels = {
+        "missile_alert": "Ракетная тревога (админ)",
+        "missile_danger": "Ракетная опасность (админ)",
+        "drone_attack": "Атака БПЛА (админ)",
+        "drone_danger": "Опасность БПЛА (админ)",
+        "clear": "Отбой (админ)"
+    }
+    
+    _15[found_region] = {
+        "status": status,
+        "last_update": now.isoformat(),
+        "message": status_labels.get(status, f"Статус изменён на {status}"),
+        "source": MANUAL_STATUS_SOURCE
+    }
+    
+    _16.append({
+        "region": found_region,
+        "status": status,
+        "timestamp": now.isoformat(),
+        "message": status_labels.get(status, f"Статус изменён на {status}"),
+        "source": MANUAL_STATUS_SOURCE
+    })
+    
+    if len(_16) > 5000:
+        _16.pop(0)
+    
+    _33()
+    
+    return Jf({
+        "success": True,
+        "region": found_region,
+        "status": status,
+        "timestamp": now.isoformat()
+    })
+
+@_.route("/admin/mass_clear", methods=["POST"])
+@_admin_required
+def _admin_mass_clear():
+    """Массовый отбой определённого типа тревоги"""
+    global _15, _16, _14
+    
+    data = QR.get_json()
+    if not data:
+        return Jf({"success": False, "error": "No data"}), 400
+    
+    status_type = data.get("status_type", "").strip()
+    
+    valid_types = {
+        "drone_danger": "опасность БПЛА",
+        "missile_danger": "ракетная опасность",
+        "missile_alert": "ракетная тревога"
+    }
+    
+    if status_type not in valid_types:
+        return Jf({"success": False, "error": f"Invalid status_type. Valid: {list(valid_types.keys())}"}), 400
+    
+    now = D.now(TZ.utc).isoformat()
+    cleared = []
+    
+    for region_name, region_info in list(_15.items()):
+        if region_info.get("status") == status_type:
+            _15[region_name] = {
+                "status": "clear",
+                "last_update": now,
+                "message": f"Массовый отбой {valid_types[status_type]} (админ)",
+                "source": MANUAL_STATUS_SOURCE
+            }
+            cleared.append(region_name)
+    
+    if cleared:
+        _16.append({
+            "region": "ВСЕ РЕГИОНЫ",
+            "status": f"mass_clear_{status_type}",
+            "timestamp": now,
+            "message": f"Массовый отбой {valid_types[status_type]} по всем регионам (админ)",
+            "source": MANUAL_STATUS_SOURCE
+        })
+        
+        _14 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
+        _33()
+    
+    return Jf({
+        "success": True,
+        "status_type": status_type,
+        "cleared_count": len(cleared),
+        "cleared_regions": cleared,
+        "timestamp": now
+    })
+
+@_.route("/admin/mass_clear_all", methods=["POST"])
+@_admin_required
+def _admin_mass_clear_all():
+    """Полный отбой всех тревог"""
+    global _15, _16, _14
+    
+    now = D.now(TZ.utc).isoformat()
+    cleared = []
+    
+    for region_name, region_info in list(_15.items()):
+        if region_info.get("status") != "clear":
+            _15[region_name] = {
+                "status": "clear",
+                "last_update": now,
+                "message": "Полный отбой всех тревог (админ)",
+                "source": MANUAL_STATUS_SOURCE
+            }
+            cleared.append(region_name)
+    
+    if cleared:
+        _16.append({
+            "region": "ВСЕ РЕГИОНЫ",
+            "status": "mass_clear_all",
+            "timestamp": now,
+            "message": "Полный отбой всех тревог по всем регионам (админ)",
+            "source": MANUAL_STATUS_SOURCE
+        })
+        
+        _14 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
+        _33()
+    
+    return Jf({
+        "success": True,
+        "cleared_count": len(cleared),
+        "cleared_regions": cleared,
+        "timestamp": now
+    })
+
+# ============= ОСНОВНЫЕ API-ЭНДПОИНТЫ =============
+
 @_.route("/api/statuses")
 def _125():
     _126 = D.now(TZ.utc)
@@ -485,7 +815,7 @@ def _133():
 
 @_.route("/")
 def _134():
-    return Jf({"status":"ok","endpoints":["/api/statuses","/api/recent_alerts"],"regions_count":len(_15),"last_updated":D.now(TZ.utc).isoformat()})
+    return Jf({"status":"ok","endpoints":["/api/statuses","/api/recent_alerts","/admin/login","/admin/regions","/admin/set_status","/admin/mass_clear","/admin/mass_clear_all"],"regions_count":len(_15),"last_updated":D.now(TZ.utc).isoformat()})
 
 def _135():
     while True:
