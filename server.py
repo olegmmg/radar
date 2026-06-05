@@ -151,6 +151,34 @@ def _27():
         _36()
     return _31
 
+def _48():
+    """Загрузка состояния с GitHub при старте (если локальный файл пуст)"""
+    global _16, _17, _18, _19, _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN, _ADMIN_CHANGE_ID, API_KEYS, API_APPLICATIONS, _API_APP_ID
+    if not _7 or not _8: return
+    try:
+        _291 = "data/radar_state.json"
+        _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
+        _294 = {"Authorization": f"token {_7}"}
+        _295 = Q.get(_293, headers=_294)
+        if _295.status_code == 200:
+            _296 = _295.json()
+            _297 = B.b64decode(_296["content"]).decode()
+            _298 = J.loads(_297)
+            _16 = _298.get("region_statuses", {})
+            _17 = _298.get("alert_history", [])
+            _18 = _298.get("last_msg_id_main", 0)
+            _19 = _298.get("last_msg_id_dpr", 0)
+            _15 = _298.get("last_summary", {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None})
+            ADMIN_CHANGES = _298.get("admin_changes", [])
+            SNAPSHOT_BEFORE_ADMIN = _298.get("snapshot_before_admin", {})
+            _ADMIN_CHANGE_ID = _298.get("admin_change_id", 0)
+            API_KEYS = _298.get("api_keys", {})
+            API_APPLICATIONS = _298.get("api_applications", [])
+            _API_APP_ID = _298.get("api_app_id", 0)
+            _26("✅ Состояние загружено с GitHub")
+    except Exception as e:
+        _26(f"GitHub load error: {e}")
+
 def _37(_38, _39="system"):
     global _16, _15
     _40 = D.now(TZ.utc).isoformat()
@@ -208,8 +236,24 @@ def _36():
 def _47():
     global _16, _17, _18, _19, _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN, _ADMIN_CHANGE_ID, API_KEYS, API_APPLICATIONS, _API_APP_ID
     try:
-        if not O.path.exists(_20): return
-        with open(_20, "r", encoding="utf-8") as _48: _49 = J.load(_48)
+        if O.path.exists(_20):
+            with open(_20, "r", encoding="utf-8") as _48: _49 = J.load(_48)
+        else:
+            # Загружаем с GitHub если локального файла нет
+            if _7 and _8:
+                _291 = "data/radar_state.json"
+                _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
+                _294 = {"Authorization": f"token {_7}"}
+                _295 = Q.get(_293, headers=_294)
+                if _295.status_code == 200:
+                    _296 = _295.json()
+                    _297 = B.b64decode(_296["content"]).decode()
+                    _49 = J.loads(_297)
+                    _26("✅ Загружено с GitHub")
+                else:
+                    return
+            else:
+                return
         _16 = _49.get("region_statuses", {})
         _17 = _49.get("alert_history", [])
         _18 = _49.get("last_msg_id_main", 0)
@@ -221,8 +265,8 @@ def _47():
         API_KEYS = _49.get("api_keys", {})
         API_APPLICATIONS = _49.get("api_applications", [])
         _API_APP_ID = _49.get("api_app_id", 0)
-    except: pass
-
+    except Exception as e:
+        _26(f"Load error: {e}")
 def _50(_51): return _14.get(_51, _51)
 
 def _52(_53):
