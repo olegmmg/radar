@@ -164,19 +164,36 @@ def _37(_38, _39="system"):
         _15 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
         _36()
     return _41 > 0
-
+    
 def _290():
     if not _7 or not _8: return
     try:
         _291 = "data/radar_state.json"
-        _292 = J.dumps({"region_statuses":_16,"alert_history":_17[-2000:],"last_msg_id_main":_18,"last_msg_id_dpr":_19,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_15,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN,"admin_change_id":_ADMIN_CHANGE_ID,"api_keys":API_KEYS,"api_applications":API_APPLICATIONS[-200:],"api_app_id":_API_APP_ID}, ensure_ascii=False)
+        _292 = J.dumps({
+            "region_statuses": _16,
+            "alert_history": _17[-2000:],
+            "last_msg_id_main": _18,
+            "last_msg_id_dpr": _19,
+            "saved_at": D.now(TZ.utc).isoformat(),
+            "last_summary": _15,
+            "admin_changes": ADMIN_CHANGES[-200:],
+            "snapshot_before_admin": SNAPSHOT_BEFORE_ADMIN,
+            "admin_change_id": _ADMIN_CHANGE_ID,
+            "api_keys": API_KEYS,
+            "api_applications": API_APPLICATIONS[-200:],
+            "api_app_id": _API_APP_ID
+        }, ensure_ascii=False)
         _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
         _294 = {"Authorization": f"token {_7}"}
         _295 = Q.get(_293, headers=_294)
         _296 = None
         if _295.status_code == 200:
             _296 = _295.json().get("sha")
-        _297 = {"message": f"Auto save {D.now(TZ.utc).isoformat()}","content": B.b64encode(_292.encode()).decode(),"branch": "main"}
+        _297 = {
+            "message": f"Auto save {D.now(TZ.utc).isoformat()}",
+            "content": B.b64encode(_292.encode()).decode(),
+            "branch": "main"
+        }
         if _296: _297["sha"] = _296
         Q.put(_293, headers=_294, json=_297)
     except Exception as e: _26(f"GitHub save error: {e}")
