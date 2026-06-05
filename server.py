@@ -873,7 +873,6 @@ def _271():
                 stats[day][status] += 1
     return Jf({"days": days, "stats": stats, "last_updated": D.now(TZ.utc).isoformat()})
 
-# ========= API Key endpoints =========
 @_.route("/api/request_key", methods=["GET","POST"])
 def _300():
     if QR.method == "GET":
@@ -910,7 +909,6 @@ def _300():
             </body>
             </html>
         ''', msg=None, msg_type="")
-    # POST
     email = QR.form.get("email","").strip()
     telegram = QR.form.get("telegram","").strip()
     reason = QR.form.get("reason","").strip()
@@ -962,7 +960,6 @@ def _302(app_id):
             break
     if not app: return Jf({"success":False,"error":"Application not found"}), 404
     if app["status"] != "pending": return Jf({"success":False,"error":"Application already processed"}), 400
-    # Генерируем ключ
     key = SC.token_hex(32)
     now = D.now(TZ.utc)
     expires = now + TD(days=API_KEY_EXPIRY_DAYS)
@@ -1019,7 +1016,6 @@ def _305():
     _36()
     return Jf({"success":True})
 
-# ========= Публичные API с проверкой ключа =========
 @_.route("/api/statuses")
 def _212():
     api_key = QR.args.get("api_key", "")
@@ -1082,7 +1078,10 @@ def _221():
 def _222():
     while True:
         I.sleep(60)
-        if _16: _36()
+        try:
+            _48() 
+        except Exception as e:
+            _26(f"Auto-sync error: {e}")
 
 def _223():
     _224 = int(O.environ.get("PORT", 5000))
