@@ -1156,7 +1156,7 @@ async def _236():
     _27()
     _237, _238 = _18, _19
     try:
-        _239 = await _21.get_messages(_9, limit=200)
+        _239 = await _21.get_messages(_9, limit=500)
         if _239:
             _240 = sorted(_239, key=lambda x: x.id)
             _18 = _240[-1].id
