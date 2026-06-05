@@ -22,9 +22,9 @@ def _1(_2):
 def _3(path=None):
     return "", 200
 
-_4 = int(O.environ["API_ID"])
-_5 = O.environ["API_HASH"]
-_6 = O.environ["SESSION_STRING"]
+_4 = int(O.environ.get("API_ID", 0))
+_5 = O.environ.get("API_HASH", "")
+_6 = O.environ.get("SESSION_STRING", "")
 _7 = O.environ.get("GITHUB_TOKEN", "")
 _8 = O.environ.get("GITHUB_REPO", "")
 _9 = O.environ.get("CHANNEL_USERNAME", "radarrussiia")
@@ -129,6 +129,12 @@ def _280(msg):
     if msg.rstrip().endswith("@olegmmg"): return msg
     return msg + " @olegmmg"
 
+def get_effective_status(statuses):
+    if not statuses: return "clear"
+    for st in ["missile_alert", "missile_danger", "drone_attack", "drone_danger"]:
+        if statuses.get(st): return st
+    return "clear"
+
 def _27():
     global _16, _15
     _28 = D.now(TZ.utc)
@@ -141,8 +147,11 @@ def _27():
         try:
             _35 = D.fromisoformat(_34)
             if _35.tzinfo is None: _35 = _35.replace(tzinfo=TZ.utc)
-            if _35 < _29 and _33.get("status") != "clear":
-                _16[_32] = {"status":"clear","last_update":_28.isoformat(),"message":_280(f"Автоматический отбой (нет обновлений >{_12}ч)"),"source":_33.get("source","system")}
+            if _35 < _29 and get_effective_status(_33.get("statuses", {})) != "clear":
+                for s in _16[_32].get("statuses", {}): _16[_32]["statuses"][s] = False
+                _16[_32]["last_update"] = _28.isoformat()
+                _16[_32]["message"] = _280(f"Автоматический отбой (нет обновлений >{_12}ч)")
+                _16[_32]["source"] = _33.get("source","system")
                 _30 += 1
                 _31 = True
         except: pass
@@ -152,11 +161,11 @@ def _27():
     return _31
 
 def _48():
-    """Загрузка состояния с GitHub при старте (если локальный файл пуст)"""
-    global _16, _17, _18, _19, _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN, _ADMIN_CHANGE_ID, API_KEYS, API_APPLICATIONS, _API_APP_ID
+    """Синхронизация ключей API с GitHub (регионы остаются локальными)"""
+    global API_KEYS, API_APPLICATIONS, _API_APP_ID
     if not _7 or not _8: return
     try:
-        _291 = "data/radar_state.json"
+        _291 = "data/api_state.json"
         _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
         _294 = {"Authorization": f"token {_7}"}
         _295 = Q.get(_293, headers=_294)
@@ -164,20 +173,12 @@ def _48():
             _296 = _295.json()
             _297 = B.b64decode(_296["content"]).decode()
             _298 = J.loads(_297)
-            _16 = _298.get("region_statuses", {})
-            _17 = _298.get("alert_history", [])
-            _18 = _298.get("last_msg_id_main", 0)
-            _19 = _298.get("last_msg_id_dpr", 0)
-            _15 = _298.get("last_summary", {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None})
-            ADMIN_CHANGES = _298.get("admin_changes", [])
-            SNAPSHOT_BEFORE_ADMIN = _298.get("snapshot_before_admin", {})
-            _ADMIN_CHANGE_ID = _298.get("admin_change_id", 0)
-            API_KEYS = _298.get("api_keys", {})
-            API_APPLICATIONS = _298.get("api_applications", [])
-            _API_APP_ID = _298.get("api_app_id", 0)
-            _26("✅ Состояние загружено с GitHub")
+            API_KEYS = _298.get("api_keys", API_KEYS)
+            API_APPLICATIONS = _298.get("api_applications", API_APPLICATIONS)
+            _API_APP_ID = _298.get("api_app_id", _API_APP_ID)
+            _26("✅ Ключи API синхронизированы с GitHub")
     except Exception as e:
-        _26(f"GitHub load error: {e}")
+        _26(f"GitHub key sync error: {e}")
 
 def _37(_38, _39="system"):
     global _16, _15
@@ -185,8 +186,11 @@ def _37(_38, _39="system"):
     _41 = 0
     _42 = {"drone_danger":"опасность БПЛА","missile_danger":"ракетная опасность","missile_alert":"ракетная тревога","drone_attack":"атака БПЛА"}
     for _43, _44 in list(_16.items()):
-        if _44.get("status") == _38:
-            _16[_43] = {"status":"clear","last_update":_40,"message":_280(f"Отбой {_42.get(_38, _38)} по всем регионам"),"source":_39}
+        if _44.get("statuses", {}).get(_38):
+            _16[_43]["statuses"][_38] = False
+            _16[_43]["last_update"] = _40
+            _16[_43]["message"] = _280(f"Отбой {_42.get(_38, _38)} по всем регионам")
+            _16[_43]["source"] = _39
             _41 += 1
     if _41 > 0:
         _15 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
@@ -195,16 +199,11 @@ def _37(_38, _39="system"):
     
 def _290():
     if not _7 or not _8:
-        _26(f"GitHub skipped: token={'yes' if _7 else 'no'}, repo={'yes' if _8 else 'no'}")
+        _26(f"GitHub API sync skipped: token={'yes' if _7 else 'no'}, repo={'yes' if _8 else 'no'}")
         return
     try:
-        _291 = "data/radar_state.json"
+        _291 = "data/api_state.json"
         _292 = J.dumps({
-            "saved_at": D.now(TZ.utc).isoformat(),
-            "last_summary": _15,
-            "admin_changes": ADMIN_CHANGES[-200:],
-            "snapshot_before_admin": SNAPSHOT_BEFORE_ADMIN,
-            "admin_change_id": _ADMIN_CHANGE_ID,
             "api_keys": API_KEYS,
             "api_applications": API_APPLICATIONS[-200:],
             "api_app_id": _API_APP_ID
@@ -212,26 +211,30 @@ def _290():
         _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
         _294 = {"Authorization": f"token {_7}"}
         _295 = Q.get(_293, headers=_294)
-        _26(f"GitHub GET: {_295.status_code}")
+        _26(f"GitHub Keys GET: {_295.status_code}")
         _296 = None
         if _295.status_code == 200:
             _296 = _295.json().get("sha")
         _297 = {
-            "message": f"Auto save {D.now(TZ.utc).isoformat()}",
+            "message": f"Auto save API keys {D.now(TZ.utc).isoformat()}",
             "content": B.b64encode(_292.encode()).decode(),
             "branch": "main"
         }
         if _296: _297["sha"] = _296
         _298 = Q.put(_293, headers=_294, json=_297)
-        _26(f"GitHub PUT: {_298.status_code} - {_298.text[:200]}")
+        _26(f"GitHub Keys PUT: {_298.status_code} - {_298.text[:200]}")
     except Exception as e:
         import traceback
-        _26(f"GitHub save error: {traceback.format_exc()}")
+        _26(f"GitHub key save error: {traceback.format_exc()}")
 
 def _36():
     try:
         _45 = {
             "saved_at": D.now(TZ.utc).isoformat(),
+            "region_statuses": _16,
+            "alert_history": _17[-5000:],
+            "last_msg_id_main": _18,
+            "last_msg_id_dpr": _19,
             "last_summary": _15,
             "admin_changes": ADMIN_CHANGES[-200:],
             "snapshot_before_admin": SNAPSHOT_BEFORE_ADMIN,
@@ -250,44 +253,43 @@ def _47():
     global _16, _17, _18, _19, _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN, _ADMIN_CHANGE_ID, API_KEYS, API_APPLICATIONS, _API_APP_ID
     try:
         if O.path.exists(_20):
-            with open(_20, "r", encoding="utf-8") as _48: _49 = J.load(_48)
-        else:
-            # Загружаем с GitHub если локального файла нет
-            if _7 and _8:
-                _291 = "data/radar_state.json"
-                _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
-                _294 = {"Authorization": f"token {_7}"}
-                _295 = Q.get(_293, headers=_294)
-                if _295.status_code == 200:
-                    _296 = _295.json()
-                    _297 = B.b64decode(_296["content"]).decode()
-                    _49 = J.loads(_297)
-                    _26("✅ Загружено с GitHub")
-                else:
-                    return
-            else:
-                return
-        _15 = _49.get("last_summary", {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None})
-        ADMIN_CHANGES = _49.get("admin_changes", [])
-        SNAPSHOT_BEFORE_ADMIN = _49.get("snapshot_before_admin", {})
-        _ADMIN_CHANGE_ID = _49.get("admin_change_id", 0)
-        API_KEYS = _49.get("api_keys", {})
-        API_APPLICATIONS = _49.get("api_applications", [])
-        _API_APP_ID = _49.get("api_app_id", 0)
+            with open(_20, "r", encoding="utf-8") as _f: _49 = J.load(_f)
+            _16 = _49.get("region_statuses", {})
+            for r, data in _16.items():
+                if "statuses" not in data:
+                    old_status = data.get("status", "clear")
+                    data["statuses"] = {"missile_alert":False,"missile_danger":False,"drone_attack":False,"drone_danger":False}
+                    if old_status in data["statuses"]:
+                        data["statuses"][old_status] = True
+            _17 = _49.get("alert_history", [])
+            _18 = _49.get("last_msg_id_main", 0)
+            _19 = _49.get("last_msg_id_dpr", 0)
+            _15 = _49.get("last_summary", {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None})
+            ADMIN_CHANGES = _49.get("admin_changes", [])
+            SNAPSHOT_BEFORE_ADMIN = _49.get("snapshot_before_admin", {})
+            _ADMIN_CHANGE_ID = _49.get("admin_change_id", 0)
+            API_KEYS = _49.get("api_keys", {})
+            API_APPLICATIONS = _49.get("api_applications", [])
+            _API_APP_ID = _49.get("api_app_id", 0)
+            _26("✅ Локальное состояние загружено")
+        
+        # Загружаем ключи с GitHub в любом случае
+        _48()
     except Exception as e:
         _26(f"Load error: {e}")
+
 def _50(_51): return _14.get(_51, _51)
 
 def _52(_53):
     _54, _55, _56, _57 = [], [], [], []
     for _58, _59 in _53.items():
-        _60 = _59.get("status")
-        if not _60 or _60 == "clear": continue
+        eff = get_effective_status(_59.get("statuses", {}))
+        if eff == "clear": continue
         _61 = _50(_58)
-        if _60 == "drone_danger": _54.append(f"    • {_61}")
-        elif _60 == "drone_attack": _55.append(f"    • {_61}")
-        elif _60 == "missile_danger": _56.append(f"    • {_61}")
-        elif _60 == "missile_alert": _57.append(f"    • {_61}")
+        if eff == "drone_danger": _54.append(f"    • {_61}")
+        elif eff == "drone_attack": _55.append(f"    • {_61}")
+        elif eff == "missile_danger": _56.append(f"    • {_61}")
+        elif eff == "missile_alert": _57.append(f"    • {_61}")
     _54.sort(); _55.sort(); _56.sort(); _57.sort()
     global _15
     _62 = {"drone_danger":_54,"drone_attack":_55,"missile_danger":_56,"missile_alert":_57}
@@ -351,13 +353,10 @@ def _86(_87): return bool(R.search(r"с \d{1,2}:\d{2} до \d{1,2}:\d{2}.*уни
 def _88(_89, _90):
     _91 = _89.lower()
     _92 = _90.lower()
-    if _89 in _24:
-        try:
-            pattern = r'\b' + R.escape(_91) + r'\b'
-            return bool(R.search(pattern, _92))
-        except:
-            return _91 in _92
-    else:
+    try:
+        pattern = r'\b' + R.escape(_91) + r'\b'
+        return bool(R.search(pattern, _92))
+    except:
         return _91 in _92
 
 def _93(_94):
@@ -397,14 +396,14 @@ def _93(_94):
     _113 = R.findall(r'([А-Яа-яёЁ]+(?:ская|ская))\s+область', _95)
     for _114 in _113:
         for _98, _99 in _23.items():
-            if _114 in _98.lower() and _99 not in _97:
+            if R.search(r'\b' + R.escape(_114.lower()) + r'\b', _98.lower()) and _99 not in _97:
                 _96.add(_99)
                 _97.add(_99)
                 break
     _115 = R.findall(r'([А-Яа-яёЁ]+(?:ский|ский))\s+край', _95)
     for _116 in _115:
         for _98, _99 in _23.items():
-            if _116 in _98.lower() and _99 not in _97:
+            if R.search(r'\b' + R.escape(_116.lower()) + r'\b', _98.lower()) and _99 not in _97:
                 _96.add(_99)
                 _97.add(_99)
                 break
@@ -475,12 +474,18 @@ def _123(_124, _125=None, _126="main", _127=None, _128=False):
     _133 = _280(_133) if _133 else ""
     _134 = False
     for _135 in _131:
-        _136 = _16.get(_135, {}).get("status")
-        if _126 != "dpr" and not _128:
-            if _136 is not None:
-                if _129 == "clear": pass
-                elif _13.get(_129, 99) > _13.get(_136, 99): continue
-        _16[_135] = {"status":_129,"last_update":_132,"message":_133,"source":_126}
+        if _135 not in _16 or "statuses" not in _16[_135]:
+            _16[_135] = {"statuses": {"missile_alert":False,"missile_danger":False,"drone_attack":False,"drone_danger":False}, "last_update": _132, "message": "", "source": _126}
+        
+        if _129 == "clear":
+            for s in _16[_135]["statuses"]: _16[_135]["statuses"][s] = False
+        else:
+            _16[_135]["statuses"][_129] = True
+            
+        _16[_135]["last_update"] = _132
+        _16[_135]["message"] = _133
+        _16[_135]["source"] = _126
+        
         _17.append({"region":_135,"status":_129,"timestamp":_132,"message":_133,"source":_126})
         if len(_17) > 5000: _17.pop(0)
         _134 = True
@@ -493,7 +498,7 @@ def _138():
     SNAPSHOT_BEFORE_ADMIN = {}
     for _139, _140 in _16.items():
         SNAPSHOT_BEFORE_ADMIN[_139] = {
-            "status": _140.get("status", "clear"),
+            "statuses": _140.get("statuses", {"missile_alert":False,"missile_danger":False,"drone_attack":False,"drone_danger":False}).copy(),
             "last_update": _140.get("last_update"),
             "message": _140.get("message", ""),
             "source": _140.get("source", "unknown")
@@ -507,11 +512,13 @@ def _137(_141, _142, _143, _144):
         if _146["region"] != "ВСЕ РЕГИОНЫ": _145.add(_146["region"])
     if _141 not in _145:
         SNAPSHOT_BEFORE_ADMIN[_141] = {
-            "status": _142,
+            "statuses": {"missile_alert":False,"missile_danger":False,"drone_attack":False,"drone_danger":False},
             "last_update": D.now(TZ.utc).isoformat(),
             "message": _143 or "",
             "source": _144
         }
+        if _141 in _16 and "statuses" in _16[_141]:
+            SNAPSHOT_BEFORE_ADMIN[_141]["statuses"] = _16[_141]["statuses"].copy()
 
 def _147(_148, _149, _150=None, _reason=None):
     global ADMIN_CHANGES, _ADMIN_CHANGE_ID
@@ -520,7 +527,7 @@ def _147(_148, _149, _150=None, _reason=None):
         "id": _ADMIN_CHANGE_ID,
         "region": _148,
         "status": _149,
-        "previous_status": _150,
+        "previous_statuses": _150,
         "reason": _reason,
         "timestamp": D.now(TZ.utc).isoformat(),
         "source": MANUAL_STATUS_SOURCE,
@@ -603,10 +610,10 @@ def _167():
                 try:
                     if D.fromisoformat(_174["timestamp"]) > _170: _173 += 1
                 except: pass
-        _168[_171] = {"status":_172["status"],"last_update":_172["last_update"],"message":_172.get("message",""),"alerts_last_hour":_173,"source":_172.get("source","unknown")}
+        _168[_171] = {"status":get_effective_status(_172.get("statuses", {})),"statuses":_172.get("statuses", {}),"last_update":_172.get("last_update"),"message":_172.get("message",""),"alerts_last_hour":_173,"source":_172.get("source","unknown")}
     for _175 in _23.values():
         if _175 not in _168:
-            _168[_175] = {"status":"clear","last_update":None,"message":"","alerts_last_hour":0,"source":"system"}
+            _168[_175] = {"status":"clear","statuses":{"missile_alert":False,"missile_danger":False,"drone_attack":False,"drone_danger":False},"last_update":None,"message":"","alerts_last_hour":0,"source":"system"}
     _176 = {}
     for _177, _178 in _168.items():
         if _177 not in _176: _176[_177] = _178
@@ -636,13 +643,25 @@ def _179():
                 _184 = _187
                 break
     if not _184: _184 = _181
-    _188 = _16.get(_184,{}).get("status","clear")
+    if _184 not in _16 or "statuses" not in _16[_184]:
+        _16[_184] = {"statuses": {"missile_alert":False,"missile_danger":False,"drone_attack":False,"drone_danger":False}, "last_update": D.now(TZ.utc).isoformat(), "message": "", "source": MANUAL_STATUS_SOURCE}
+    
+    _prev_statuses = _16[_184]["statuses"].copy()
+    _188 = get_effective_status(_prev_statuses)
     _189 = D.now(TZ.utc)
     _default_msg = _280(_reason if _reason else "Статус изменён администратором")
-    _16[_184] = {"status":_182,"last_update":_189.isoformat(),"message":_default_msg,"source":MANUAL_STATUS_SOURCE}
+    
+    if _182 == "clear":
+        for s in _16[_184]["statuses"]: _16[_184]["statuses"][s] = False
+    else:
+        _16[_184]["statuses"][_182] = True
+        
+    _16[_184]["last_update"] = _189.isoformat()
+    _16[_184]["message"] = _default_msg
+    _16[_184]["source"] = MANUAL_STATUS_SOURCE
     _17.append({"region":_184,"status":_182,"timestamp":_189.isoformat(),"message":_default_msg,"source":MANUAL_STATUS_SOURCE})
     if len(_17) > 5000: _17.pop(0)
-    _147(_184, _182, _188, _reason)
+    _147(_184, _182, _prev_statuses, _reason)
     _36()
     return Jf({"success":True,"region":_184,"status":_182,"previous_status":_188,"timestamp":_189.isoformat()})
 
@@ -660,14 +679,17 @@ def _191():
     _195 = D.now(TZ.utc).isoformat()
     _196 = []
     for _197, _198 in list(_16.items()):
-        if _198.get("status") == _193:
+        if _198.get("statuses", {}).get(_193):
             _msg = _reason if _reason else f"Массовый отбой {_194[_193]} (админ)"
-            _16[_197] = {"status":"clear","last_update":_195,"message":_280(_msg),"source":MANUAL_STATUS_SOURCE}
+            _16[_197]["statuses"][_193] = False
+            _16[_197]["last_update"] = _195
+            _16[_197]["message"] = _280(_msg)
+            _16[_197]["source"] = MANUAL_STATUS_SOURCE
             _196.append(_197)
     if _196:
         _msg_total = _reason if _reason else f"Массовый отбой {_194[_193]} (админ)"
         _17.append({"region":"ВСЕ РЕГИОНЫ","status":f"mass_clear_{_193}","timestamp":_195,"message":_280(_msg_total),"source":MANUAL_STATUS_SOURCE})
-        _147("ВСЕ РЕГИОНЫ", f"mass_clear_{_193}", _193, _reason)
+        _147("ВСЕ РЕГИОНЫ", f"mass_clear_{_193}", None, _reason)
         _15 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
         _36()
     return Jf({"success":True,"status_type":_193,"cleared_count":len(_196),"cleared_regions":_196,"timestamp":_195})
@@ -681,9 +703,12 @@ def _199():
     if not SNAPSHOT_BEFORE_ADMIN: _138()
     _201 = []
     for _202, _203 in list(_16.items()):
-        if _203.get("status") != "clear":
+        if get_effective_status(_203.get("statuses", {})) != "clear":
             _msg = _reason if _reason else "Полный отбой всех тревог (админ)"
-            _16[_202] = {"status":"clear","last_update":_200,"message":_280(_msg),"source":MANUAL_STATUS_SOURCE}
+            for s in _16[_202]["statuses"]: _16[_202]["statuses"][s] = False
+            _16[_202]["last_update"] = _200
+            _16[_202]["message"] = _280(_msg)
+            _16[_202]["source"] = MANUAL_STATUS_SOURCE
             _201.append(_202)
     if _201:
         _msg_total = _reason if _reason else "Полный отбой всех тревог (админ)"
@@ -707,14 +732,17 @@ def _205():
     _207 = {}
     if SNAPSHOT_BEFORE_ADMIN:
         for _208, _209 in SNAPSHOT_BEFORE_ADMIN.items():
-            _16[_208] = {"status":_209["status"],"last_update":_209["last_update"] or D.now(TZ.utc).isoformat(),"message":_209["message"],"source":_209["source"]}
-            _207[_208] = {"status":_209["status"],"last_update":_209["last_update"],"message":_209["message"],"source":_209["source"]}
+            _16[_208] = {"statuses":_209["statuses"].copy(),"last_update":_209["last_update"] or D.now(TZ.utc).isoformat(),"message":_209["message"],"source":_209["source"]}
+            _207[_208] = {"status":get_effective_status(_209["statuses"]),"last_update":_209["last_update"],"message":_209["message"],"source":_209["source"]}
             _206 += 1
         SNAPSHOT_BEFORE_ADMIN = {}
     else:
         for _210, _211 in list(_16.items()):
             if _211.get("source") == MANUAL_STATUS_SOURCE:
-                _16[_210] = {"status":"clear","last_update":D.now(TZ.utc).isoformat(),"message":_280("Откат изменений админа"),"source":"system"}
+                for s in _16[_210]["statuses"]: _16[_210]["statuses"][s] = False
+                _16[_210]["last_update"] = D.now(TZ.utc).isoformat()
+                _16[_210]["message"] = _280("Откат изменений админа")
+                _16[_210]["source"] = "system"
                 _207[_210] = {"status":"clear","last_update":D.now(TZ.utc).isoformat(),"message":_280("Откат изменений админа"),"source":"system"}
                 _206 += 1
     ADMIN_CHANGES = []
@@ -738,7 +766,16 @@ def _256():
     _262 = {}
     _cred_msg = _280(_258[:500])
     for _263 in _260:
-        _16[_263] = {"status":_259,"last_update":_261.isoformat(),"message":_cred_msg,"source":"simulated"}
+        if _263 not in _16 or "statuses" not in _16[_263]:
+            _16[_263] = {"statuses": {"missile_alert":False,"missile_danger":False,"drone_attack":False,"drone_danger":False}, "last_update": _261.isoformat(), "message": "", "source": "simulated"}
+        if _259 == "clear":
+            for s in _16[_263]["statuses"]: _16[_263]["statuses"][s] = False
+        elif not _259.startswith("mass_clear_"):
+            _16[_263]["statuses"][_259] = True
+        _16[_263]["last_update"] = _261.isoformat()
+        _16[_263]["message"] = _cred_msg
+        _16[_263]["source"] = "simulated"
+        
         _17.append({"region":_263,"status":_259,"timestamp":_261.isoformat(),"message":_cred_msg,"source":"simulated"})
         if len(_17) > 5000: _17.pop(0)
         _262[_263] = _259
@@ -756,11 +793,12 @@ def _264():
     entries = []
     for ch in ADMIN_CHANGES:
         if ch.get("rolled_back"): continue
+        prev = get_effective_status(ch.get("previous_statuses", {})) if "previous_statuses" in ch else ch.get("previous_status")
         entries.append({
             "id": ch.get("id"),
             "region": ch["region"],
             "status": ch["status"],
-            "previous_status": ch.get("previous_status"),
+            "previous_status": prev,
             "reason": ch.get("reason",""),
             "timestamp": ch["timestamp"],
             "source": ch.get("source", MANUAL_STATUS_SOURCE),
@@ -800,16 +838,14 @@ def _265(change_id):
             break
     if not target: return Jf({"success":False,"error":"Change not found or already rolled back"}), 404
     region = target["region"]
-    prev_status = target.get("previous_status")
-    if not prev_status or region == "ВСЕ РЕГИОНЫ":
+    prev_statuses = target.get("previous_statuses")
+    if not prev_statuses or region == "ВСЕ РЕГИОНЫ":
         return Jf({"success":False,"error":"Cannot rollback this change"}), 400
-    current_status = _16.get(region, {}).get("status")
-    if current_status != target["status"]:
-        return Jf({"success":False,"error":"Region status changed after admin action, cannot rollback"}), 400
-    _16[region] = {"status": prev_status, "last_update": D.now(TZ.utc).isoformat(), "message": _280(f"Откат изменения #{change_id}"), "source": "system"}
+    
+    _16[region] = {"statuses": prev_statuses.copy(), "last_update": D.now(TZ.utc).isoformat(), "message": _280(f"Откат изменения #{change_id}"), "source": "system"}
     target["rolled_back"] = True
     _36()
-    return Jf({"success":True,"region":region,"restored_status":prev_status})
+    return Jf({"success":True,"region":region,"restored_status":get_effective_status(prev_statuses)})
 
 @_.route("/admin/region_details/<path:region>", methods=["GET"])
 @_155
@@ -826,7 +862,7 @@ def _266(region):
                 break
     if not _267:
         return Jf({"error":"Region not found"}), 404
-    info = _16.get(_267, {"status":"clear","last_update":None,"message":"","source":"system"})
+    info = _16.get(_267, {"statuses":{"missile_alert":False,"missile_danger":False,"drone_attack":False,"drone_danger":False},"last_update":None,"message":"","source":"system"})
     recent = []
     for alert in reversed(_17):
         if alert["region"] == _267:
@@ -834,7 +870,8 @@ def _266(region):
             if len(recent) >= 10: break
     return Jf({
         "region": _267,
-        "status": info["status"],
+        "status": get_effective_status(info.get("statuses", {})),
+        "statuses": info.get("statuses", {}),
         "last_update": info.get("last_update"),
         "message": info.get("message",""),
         "source": info.get("source","unknown"),
@@ -1029,7 +1066,7 @@ def _212():
                 try:
                     if D.fromisoformat(_219["timestamp"]) > _214: _218 += 1
                 except: pass
-        _215["regions"][_216] = {"status":_217["status"],"last_update":_217["last_update"],"message":_217.get("message",""),"alerts_last_hour":_218,"source":_217.get("source","unknown")}
+        _215["regions"][_216] = {"status":get_effective_status(_217.get("statuses", {})),"statuses":_217.get("statuses", {}),"last_update":_217["last_update"],"message":_217.get("message",""),"alerts_last_hour":_218,"source":_217.get("source","unknown")}
     return Jf(_215)
 
 @_.route("/api/recent_alerts")
