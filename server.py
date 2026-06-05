@@ -200,10 +200,6 @@ def _290():
     try:
         _291 = "data/radar_state.json"
         _292 = J.dumps({
-            "region_statuses": _16,
-            "alert_history": _17[-2000:],
-            "last_msg_id_main": _18,
-            "last_msg_id_dpr": _19,
             "saved_at": D.now(TZ.utc).isoformat(),
             "last_summary": _15,
             "admin_changes": ADMIN_CHANGES[-200:],
@@ -235,10 +231,6 @@ def _290():
 def _36():
     try:
         _45 = {
-            "region_statuses": _16,
-            "alert_history": _17[-2000:],
-            "last_msg_id_main": _18,
-            "last_msg_id_dpr": _19,
             "saved_at": D.now(TZ.utc).isoformat(),
             "last_summary": _15,
             "admin_changes": ADMIN_CHANGES[-200:],
@@ -275,10 +267,6 @@ def _47():
                     return
             else:
                 return
-        _16 = _49.get("region_statuses", {})
-        _17 = _49.get("alert_history", [])
-        _18 = _49.get("last_msg_id_main", 0)
-        _19 = _49.get("last_msg_id_dpr", 0)
         _15 = _49.get("last_summary", {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None})
         ADMIN_CHANGES = _49.get("admin_changes", [])
         SNAPSHOT_BEFORE_ADMIN = _49.get("snapshot_before_admin", {})
