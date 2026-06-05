@@ -212,7 +212,7 @@ def _290():
             "api_keys": API_KEYS,
             "api_applications": API_APPLICATIONS[-200:],
             "api_app_id": _API_APP_ID
-        }, ensure_ascii=False)
+        }, ensure_ascii=False, default=str)
         _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
         _294 = {"Authorization": f"token {_7}"}
         _295 = Q.get(_293, headers=_294)
@@ -227,15 +227,29 @@ def _290():
         }
         if _296: _297["sha"] = _296
         _298 = Q.put(_293, headers=_294, json=_297)
-        _26(f"GitHub PUT: {_298.status_code}")
+        _26(f"GitHub PUT: {_298.status_code} - {_298.text[:200]}")
     except Exception as e:
-        _26(f"GitHub save error: {e}")
+        import traceback
+        _26(f"GitHub save error: {traceback.format_exc()}")
 
 def _36():
     try:
-        _45 = {"region_statuses":_16,"alert_history":_17[-2000:],"last_msg_id_main":_18,"last_msg_id_dpr":_19,"saved_at":D.now(TZ.utc).isoformat(),"last_summary":_15,"admin_changes":ADMIN_CHANGES[-200:],"snapshot_before_admin":SNAPSHOT_BEFORE_ADMIN,"admin_change_id":_ADMIN_CHANGE_ID,"api_keys":API_KEYS,"api_applications":API_APPLICATIONS[-200:],"api_app_id":_API_APP_ID}
-        with open(_20, "w", encoding="utf-8") as _46: J.dump(_45, _46, ensure_ascii=False)
-        _26("Local save OK → calling GitHub...")
+        _45 = {
+            "region_statuses": _16,
+            "alert_history": _17[-2000:],
+            "last_msg_id_main": _18,
+            "last_msg_id_dpr": _19,
+            "saved_at": D.now(TZ.utc).isoformat(),
+            "last_summary": _15,
+            "admin_changes": ADMIN_CHANGES[-200:],
+            "snapshot_before_admin": SNAPSHOT_BEFORE_ADMIN,
+            "admin_change_id": _ADMIN_CHANGE_ID,
+            "api_keys": API_KEYS,
+            "api_applications": API_APPLICATIONS[-200:],
+            "api_app_id": _API_APP_ID
+        }
+        with open(_20, "w", encoding="utf-8") as _46:
+            J.dump(_45, _46, ensure_ascii=False, default=str)
         _290()
     except Exception as e:
         _26(f"Local save error: {e}")
