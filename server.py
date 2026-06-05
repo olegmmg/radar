@@ -985,8 +985,18 @@ def _220():
 
 @_.route("/")
 def _221():
-    return Jf({"status":"ok","endpoints":["/api/statuses","/api/recent_alerts","/admin/login","/admin/regions","/admin/set_status","/admin/mass_clear","/admin/mass_clear_all","/admin/changes","/admin/rollback","/admin/parse_message","/admin/log","/admin/log/<id>/rollback","/admin/region_details/<region>","/admin/stats","/api/request_key","/admin/api_applications","/admin/api_keys"],"regions_count":len(_16),"last_updated":D.now(TZ.utc).isoformat()})
-
+    return Jf({
+        "status": "ok",
+        "endpoints": [
+            "/api/statuses",
+            "/api/recent_alerts",
+            "/api/request_key"
+        ],
+        "docs": "/docs",
+        "regions_count": len(_16),
+        "last_updated": D.now(TZ.utc).isoformat()
+    })
+    
 def _222():
     while True:
         I.sleep(60)
