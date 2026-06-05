@@ -1,5 +1,5 @@
 import os as O, re as R, json as J, threading as T, time as I, requests as Q, asyncio as A
-import hashlib as HL, secrets as SC
+import hashlib as HL, secrets as SC, base64 as B
 from functools import wraps as WR
 from datetime import datetime as D, timedelta as TD, timezone as TZ
 from flask import Flask as F, jsonify as Jf, request as QR, render_template_string as RTS
@@ -176,7 +176,7 @@ def _290():
         _296 = None
         if _295.status_code == 200:
             _296 = _295.json().get("sha")
-        _297 = {"message": f"Auto save {D.now(TZ.utc).isoformat()}","content": HL.b64encode(_292.encode()).decode(),"branch": "main"}
+        _297 = {"message": f"Auto save {D.now(TZ.utc).isoformat()}","content": B.b64encode(_292.encode()).decode(),"branch": "main"}
         if _296: _297["sha"] = _296
         Q.put(_293, headers=_294, json=_297)
     except Exception as e: _26(f"GitHub save error: {e}")
