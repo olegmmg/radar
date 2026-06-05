@@ -194,7 +194,9 @@ def _37(_38, _39="system"):
     return _41 > 0
     
 def _290():
-    if not _7 or not _8: return
+    if not _7 or not _8:
+        _26("GitHub save skipped: no token or repo")
+        return
     try:
         _291 = "data/radar_state.json"
         _292 = J.dumps({
@@ -214,6 +216,7 @@ def _290():
         _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
         _294 = {"Authorization": f"token {_7}"}
         _295 = Q.get(_293, headers=_294)
+        _26(f"GitHub GET status: {_295.status_code}")
         _296 = None
         if _295.status_code == 200:
             _296 = _295.json().get("sha")
@@ -223,8 +226,10 @@ def _290():
             "branch": "main"
         }
         if _296: _297["sha"] = _296
-        Q.put(_293, headers=_294, json=_297)
-    except Exception as e: _26(f"GitHub save error: {e}")
+        _298 = Q.put(_293, headers=_294, json=_297)
+        _26(f"GitHub PUT status: {_298.status_code}")
+    except Exception as e:
+        _26(f"GitHub save error: {e}")
 
 def _36():
     try:
