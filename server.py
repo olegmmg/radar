@@ -60,7 +60,7 @@ _16 = {}
 _17 = []
 _18 = 0
 _19 = 0
-_20 = "/tmp/radar_state.json"
+# _20 = "/tmp/radar_state.json"  # УДАЛЕНО - больше не используем локальный файл
 _21 = None
 
 _22 = {"костромской":"Костромская область","кировской":"Кировская область","московской":"Московская область","ленинградской":"Ленинградская область","нижегородской":"Нижегородская область","тульской":"Тульская область","калужской":"Калужская область","рязанской":"Рязанская область","тверской":"Тверская область","воронежской":"Воронежская область","белгородской":"Белгородская область","брянской":"Брянская область","курской":"Курская область","смоленской":"Смоленская область","орловской":"Орловская область","липецкой":"Липецкая область","тамбовской":"Тамбовская область","владимирской":"Владимирская область","ивановской":"Ивановская область","ярославской":"Ярославская область","вологодской":"Вологодская область","новгородской":"Новгородская область","псковской":"Псковская область","калининградской":"Калининградская область","пензенской":"Пензенская область","ульяновской":"Ульяновская область","саратовской":"Саратовская область","самарской":"Самарская область","оренбургской":"Оренбургская область","челябинской":"Челябинская область","свердловской":"Свердловская область","курганской":"Курганская область","тюменской":"Тюменская область","омской":"Омская область","томской":"Томская область","новосибирской":"Новосибирская область","кемеровской":"Кемеровская область","иркутской":"Иркутская область","амурской":"Амурская область","сахалинской":"Сахалинская область","магаданской":"Магаданская область","мурманской":"Мурманская область","архангельской":"Архангельская область","астраханской":"Астраханская область","волгоградской":"Волгоградская область","ростовской":"Ростовская область","запорожской":"Запорожская область","херсонской":"Херсонская область"}
@@ -161,9 +161,11 @@ def _27():
     return _31
 
 def _48():
-    """Синхронизация ключей API с GitHub (регионы остаются локальными)"""
+    """Загрузка ключей API с GitHub (без локального файла)"""
     global API_KEYS, API_APPLICATIONS, _API_APP_ID
-    if not _7 or not _8: return
+    if not _7 or not _8:
+        _26(f"GitHub sync skipped: token={'yes' if _7 else 'no'}, repo={'yes' if _8 else 'no'}")
+        return
     try:
         _291 = "data/api_state.json"
         _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
@@ -173,33 +175,19 @@ def _48():
             _296 = _295.json()
             _297 = B.b64decode(_296["content"]).decode()
             _298 = J.loads(_297)
-            API_KEYS = _298.get("api_keys", API_KEYS)
-            API_APPLICATIONS = _298.get("api_applications", API_APPLICATIONS)
+            API_KEYS = _298.get("api_keys", {})
+            API_APPLICATIONS = _298.get("api_applications", [])
             _API_APP_ID = _298.get("api_app_id", _API_APP_ID)
-            _26("✅ Ключи API синхронизированы с GitHub")
+            _26("✅ Ключи API загружены с GitHub")
+        else:
+            _26(f"GitHub API file not found (status {_295.status_code}), starting fresh")
     except Exception as e:
-        _26(f"GitHub key sync error: {e}")
+        _26(f"GitHub key load error: {e}")
 
-def _37(_38, _39="system"):
-    global _16, _15
-    _40 = D.now(TZ.utc).isoformat()
-    _41 = 0
-    _42 = {"drone_danger":"опасность БПЛА","missile_danger":"ракетная опасность","missile_alert":"ракетная тревога","drone_attack":"атака БПЛА"}
-    for _43, _44 in list(_16.items()):
-        if _44.get("statuses", {}).get(_38):
-            _16[_43]["statuses"][_38] = False
-            _16[_43]["last_update"] = _40
-            _16[_43]["message"] = _280(f"Отбой {_42.get(_38, _38)} по всем регионам")
-            _16[_43]["source"] = _39
-            _41 += 1
-    if _41 > 0:
-        _15 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
-        _36()
-    return _41 > 0
-    
 def _290():
+    """Сохранение ключей API на GitHub (без локального файла)"""
     if not _7 or not _8:
-        _26(f"GitHub API sync skipped: token={'yes' if _7 else 'no'}, repo={'yes' if _8 else 'no'}")
+        _26(f"GitHub API save skipped")
         return
     try:
         _291 = "data/api_state.json"
@@ -211,7 +199,6 @@ def _290():
         _293 = f"https://api.github.com/repos/{_8}/contents/{_291}"
         _294 = {"Authorization": f"token {_7}"}
         _295 = Q.get(_293, headers=_294)
-        _26(f"GitHub Keys GET: {_295.status_code}")
         _296 = None
         if _295.status_code == 200:
             _296 = _295.json().get("sha")
@@ -220,63 +207,21 @@ def _290():
             "content": B.b64encode(_292.encode()).decode(),
             "branch": "main"
         }
-        if _296: _297["sha"] = _296
+        if _296:
+            _297["sha"] = _296
         _298 = Q.put(_293, headers=_294, json=_297)
-        _26(f"GitHub Keys PUT: {_298.status_code} - {_298.text[:200]}")
+        _26(f"GitHub API keys saved: {_298.status_code}")
     except Exception as e:
         import traceback
         _26(f"GitHub key save error: {traceback.format_exc()}")
 
+# Функция _36() теперь только сохраняет на GitHub (без локального файла)
 def _36():
-    try:
-        _45 = {
-            "saved_at": D.now(TZ.utc).isoformat(),
-            "region_statuses": _16,
-            "alert_history": _17[-5000:],
-            "last_msg_id_main": _18,
-            "last_msg_id_dpr": _19,
-            "last_summary": _15,
-            "admin_changes": ADMIN_CHANGES[-200:],
-            "snapshot_before_admin": SNAPSHOT_BEFORE_ADMIN,
-            "admin_change_id": _ADMIN_CHANGE_ID,
-            "api_keys": API_KEYS,
-            "api_applications": API_APPLICATIONS[-200:],
-            "api_app_id": _API_APP_ID
-        }
-        with open(_20, "w", encoding="utf-8") as _46:
-            J.dump(_45, _46, ensure_ascii=False, default=str)
-        _290()
-    except Exception as e:
-        _26(f"Local save error: {e}")
+    """Сохраняет только API-ключи на GitHub (регионы не сохраняются)"""
+    _290()
 
-def _47():
-    global _16, _17, _18, _19, _15, ADMIN_CHANGES, SNAPSHOT_BEFORE_ADMIN, _ADMIN_CHANGE_ID, API_KEYS, API_APPLICATIONS, _API_APP_ID
-    try:
-        if O.path.exists(_20):
-            with open(_20, "r", encoding="utf-8") as _f: _49 = J.load(_f)
-            _16 = _49.get("region_statuses", {})
-            for r, data in _16.items():
-                if "statuses" not in data:
-                    old_status = data.get("status", "clear")
-                    data["statuses"] = {"missile_alert":False,"missile_danger":False,"drone_attack":False,"drone_danger":False}
-                    if old_status in data["statuses"]:
-                        data["statuses"][old_status] = True
-            _17 = _49.get("alert_history", [])
-            _18 = _49.get("last_msg_id_main", 0)
-            _19 = _49.get("last_msg_id_dpr", 0)
-            _15 = _49.get("last_summary", {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None})
-            ADMIN_CHANGES = _49.get("admin_changes", [])
-            SNAPSHOT_BEFORE_ADMIN = _49.get("snapshot_before_admin", {})
-            _ADMIN_CHANGE_ID = _49.get("admin_change_id", 0)
-            API_KEYS = _49.get("api_keys", {})
-            API_APPLICATIONS = _49.get("api_applications", [])
-            _API_APP_ID = _49.get("api_app_id", 0)
-            _26("✅ Локальное состояние загружено")
-        
-        # Загружаем ключи с GitHub в любом случае
-        _48()
-    except Exception as e:
-        _26(f"Load error: {e}")
+# Функция _47() удалена - больше не загружаем локальный файл
+# Вместо неё при старте просто загружаем ключи с GitHub
 
 def _50(_51): return _14.get(_51, _51)
 
@@ -492,6 +437,23 @@ def _123(_124, _125=None, _126="main", _127=None, _128=False):
         _137(_135, _129, _133, _126)
     return _134
 
+def _37(_38, _39="system"):
+    global _16, _15
+    _40 = D.now(TZ.utc).isoformat()
+    _41 = 0
+    _42 = {"drone_danger":"опасность БПЛА","missile_danger":"ракетная опасность","missile_alert":"ракетная тревога","drone_attack":"атака БПЛА"}
+    for _43, _44 in list(_16.items()):
+        if _44.get("statuses", {}).get(_38):
+            _16[_43]["statuses"][_38] = False
+            _16[_43]["last_update"] = _40
+            _16[_43]["message"] = _280(f"Отбой {_42.get(_38, _38)} по всем регионам")
+            _16[_43]["source"] = _39
+            _41 += 1
+    if _41 > 0:
+        _15 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
+        _36()
+    return _41 > 0
+
 def _138():
     global SNAPSHOT_BEFORE_ADMIN
     if SNAPSHOT_BEFORE_ADMIN: return
@@ -575,6 +537,7 @@ def _159():
     _161 = [t for t, exp in ADMIN_TOKENS.items() if exp < _160]
     for t in _161: del ADMIN_TOKENS[t]
 
+# ========== ВСЕ АДМИНСКИЕ РОУТЫ (без изменений) ==========
 @_.route("/admin/login", methods=["POST"])
 def _162():
     ip = QR.remote_addr
@@ -662,7 +625,7 @@ def _179():
     _17.append({"region":_184,"status":_182,"timestamp":_189.isoformat(),"message":_default_msg,"source":MANUAL_STATUS_SOURCE})
     if len(_17) > 5000: _17.pop(0)
     _147(_184, _182, _prev_statuses, _reason)
-    _36()
+    _36()  # Сохраняем только API-ключи на GitHub
     return Jf({"success":True,"region":_184,"status":_182,"previous_status":_188,"timestamp":_189.isoformat()})
 
 @_.route("/admin/mass_clear", methods=["POST"])
@@ -1152,7 +1115,19 @@ async def _236():
     global _21, _18, _19, _16
     _21 = TC(SS(_6), _4, _5)
     await _21.start()
-    _47()
+    
+    # Загружаем только API-ключи с GitHub (регионы не сохраняем)
+    _48()
+    
+    # Инициализируем _16 пустым словарём (никаких сохранённых статусов)
+    _16 = {}
+    _17 = []
+    _18 = 0
+    _19 = 0
+    _15 = {"drone_danger":[],"drone_attack":[],"missile_danger":[],"missile_alert":[],"timestamp":None}
+    SNAPSHOT_BEFORE_ADMIN.clear()
+    ADMIN_CHANGES.clear()
+    
     _27()
     _237, _238 = _18, _19
     try:
