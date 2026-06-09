@@ -176,7 +176,7 @@ def _48():
             API_KEYS = _298.get("api_keys", API_KEYS)
             API_APPLICATIONS = _298.get("api_applications", API_APPLICATIONS)
             _API_APP_ID = _298.get("api_app_id", _API_APP_ID)
-            _26("✅ Ключи API синхронизированы с GitHub")
+            _26("Ключи API синхронизированы с GitHub")
     except Exception as e:
         _26(f"GitHub key sync error: {e}")
 
